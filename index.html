@@ -625,6 +625,14 @@
                       <td align="center">
                         <table width="94%" border="0" align="center" cellpadding="4">
                           <tr>
+                            <td align="right"><font color="#0000CC"><strong>เบอร์โทรศัพท์มือถือ :</strong></font></td>
+                            <td><input type="text" id="chpPhone" size="22" maxlength="20" placeholder="เช่น 0812345678"></td>
+                          </tr>
+                          <tr>
+                            <td align="right"><font color="#0000CC"><strong>อีเมล (Email) :</strong></font></td>
+                            <td><input type="email" id="chpEmail" size="22" maxlength="100" placeholder="เช่น name@example.com"></td>
+                          </tr>
+                          <tr>
                             <td align="right"><font color="#0000CC"><strong>กำหนดรหัสผ่านใหม่ (New) :</strong></font></td>
                             <td><input type="password" id="newPwd1" size="22" maxlength="30" required></td>
                           </tr>
@@ -676,11 +684,15 @@
       <!-- Step 1: กรอกเลข 13 หลัก -->
       <div id="otpStep1">
         <p style="font-size:13px; color:#334155; margin-top:0;">
-          กรอกเลขประจำตัวประชาชน 13 หลัก เพื่อค้นหาข้อมูลสมาชิกและรับรหัสยืนยันตัวตน (OTP)
+          กรอกเลขประจำตัวประชาชน 13 หลัก เพื่อค้นหาข้อมูลสมาชิก เบอร์โทรศัพท์ อีเมล และรับรหัสยืนยันตัวตน (OTP)
         </p>
-        <div style="margin-bottom:12px;">
+        <div style="margin-bottom:10px;">
           <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">เลขประจำตัวประชาชน 13 หลัก:</label>
           <input type="text" id="otpIdno" maxlength="13" placeholder="เช่น 3330100466968" style="width:100%; padding:8px; font-size:15px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+        </div>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">เบอร์โทรศัพท์มือถือ หรือ อีเมล (ใช้ยืนยัน/ลงทะเบียน):</label>
+          <input type="text" id="otpContactInput" placeholder="เช่น 0812345678 หรือ example@gmail.com" style="width:100%; padding:8px; font-size:14px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
         </div>
         <button onclick="requestOtpCode()" id="btnReqOtp" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">
           📲 ค้นหาสมาชิกและขอรหัส OTP
@@ -693,7 +705,19 @@
           <div>👤 <b>ชื่อ-สกุล:</b> <span id="otpMemName">-</span></div>
           <div>🏥 <b>ตำแหน่ง:</b> <span id="otpMemPos">-</span></div>
           <div>📱 <b>เบอร์มือถือที่ลงทะเบียน:</b> <span id="otpMaskedPhone">-</span></div>
+          <div>✉️ <b>อีเมลที่ลงทะเบียน:</b> <span id="otpMaskedEmail">-</span></div>
           <div style="margin-top:4px; color:#15803d;">🔢 <b>Ref Code:</b> <span id="otpRefCode">-</span> | <b>รหัส OTP ยืนยันตัวตน:</b> <span id="otpDemoCode" style="background:#dcfce7; padding:2px 6px; border-radius:4px; font-weight:bold; color:#166534;">-</span></div>
+        </div>
+
+        <div style="display:flex; gap:8px; margin-bottom:10px;">
+          <div style="flex:1;">
+            <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:3px;">📱 เบอร์โทรศัพท์ (แก้ไข/บันทึกได้):</label>
+            <input type="text" id="otpEditPhone" maxlength="20" placeholder="เช่น 0812345678" style="width:100%; padding:6px; font-size:13px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+          </div>
+          <div style="flex:1;">
+            <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:3px;">✉️ อีเมล (แก้ไข/บันทึกได้):</label>
+            <input type="email" id="otpEditEmail" maxlength="100" placeholder="เช่น name@gmail.com" style="width:100%; padding:6px; font-size:13px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+          </div>
         </div>
 
         <div style="margin-bottom:10px;">

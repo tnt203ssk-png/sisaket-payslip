@@ -346,7 +346,8 @@ export async function onRequest(context) {
       }
 
       const qMember = await db.query(`
-        SELECT m.noman, m.nname, m.nobank, m.idno, m.nposit, m.noffice, m.passc, m.cbank, m.mbphone, m.chn,
+        SELECT m.noman, m.nname, m.nobank, m.idno, m.nposit, m.noffice, m.passc, m.cbank,
+               COALESCE(m.mbphone, '') AS mbphone, COALESCE(m.email, '') AS email, m.chn,
                COALESCE(o.noffice, 'องค์การบริหารส่วนจังหวัดศรีสะเกษ') AS office_name,
                COALESCE(b.namebank, 'ธนาคารกรุงไทย จำกัด(มหาชน)') AS bank_name,
                COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch
@@ -418,32 +419,46 @@ export async function onRequest(context) {
       }), { headers: corsHeaders });
     }
 
-    // 4. Change Password (logged-in user)
+    // 4. Change Password & Update Phone/Email (logged-in user)
     if (action === 'change_password') {
       const idno = String(body.idno || '').trim();
       const newPass = String(body.new_password || '').trim();
+      const mbphone = body.mbphone !== undefined ? String(body.mbphone).trim() : null;
+      const email = body.email !== undefined ? String(body.email).trim() : null;
+
       if (!idno || !newPass || newPass.length < 4) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'กรุณากำหนดรหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร' }), { headers: corsHeaders });
       }
 
-      await db.query(`UPDATE tbmain SET passc = ${sqlEsc(newPass)}, dayup = NOW(), chn = 1 WHERE idno = ${sqlEsc(idno)};`);
+      let extraSet = '';
+      if (mbphone !== null) extraSet += `, mbphone = ${sqlEsc(mbphone)}`;
+      if (email !== null) extraSet += `, email = ${sqlEsc(email)}`;
+
+      await db.query(`UPDATE tbmain SET passc = ${sqlEsc(newPass)}, dayup = NOW(), chn = 1${extraSet} WHERE idno = ${sqlEsc(idno)};`);
+      if (mbphone !== null || email !== null) {
+        let pSet = [];
+        if (mbphone !== null) pSet.push(`mbphone = ${sqlEsc(mbphone)}`);
+        if (email !== null) pSet.push(`email = ${sqlEsc(email)}`);
+        await db.query(`UPDATE person SET ${pSet.join(', ')} WHERE idno = ${sqlEsc(idno)};`);
+      }
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: 'บันทึกเปลี่ยนรหัสผ่านใหม่เรียบร้อยแล้ว!'
+        message: 'บันทึกเปลี่ยนรหัสผ่านและข้อมูลติดต่อ (เบอร์โทรศัพท์/อีเมล) เรียบร้อยแล้ว!'
       }), { headers: corsHeaders });
     }
 
     // 5. Request OTP for Forgot Password
     if (action === 'request_otp') {
       const idno = String(body.idno || '').trim();
+      const contact = String(body.contact || '').trim();
       if (!idno || idno.length !== 13) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'กรุณากรอกเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
       }
 
-      const qMem = await db.query(`SELECT noman, nname, nobank, idno, nposit, mbphone FROM tbmain WHERE idno = ${sqlEsc(idno)} LIMIT 1;`);
+      const qMem = await db.query(`SELECT noman, nname, nobank, idno, nposit, COALESCE(mbphone, '') AS mbphone, COALESCE(email, '') AS email FROM tbmain WHERE idno = ${sqlEsc(idno)} LIMIT 1;`);
       if (qMem.rows.length === 0) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'ไม่พบเลขประจำตัวประชาชนนี้ในระบบทะเบียนสมาชิก tbmain' }), { headers: corsHeaders });
@@ -451,24 +466,35 @@ export async function onRequest(context) {
 
       const member = qMem.rows[0];
       const phone = String(member.mbphone || '').trim();
+      const email = String(member.email || '').trim();
       const hasPhone = phone.length >= 9 && phone !== '0';
+      const hasEmail = email.includes('@');
 
+      // If user also typed a phone/email in Step 1 and the DB had none (or matched), we can pre-fill it
       const otpCode = String(Math.floor(100000 + Math.random() * 900000));
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let refCode = '';
       for (let i = 0; i < 4; i++) refCode += chars[Math.floor(Math.random() * chars.length)];
 
-      const savePhone = hasPhone ? phone : '0000000000';
+      const savePhone = hasPhone ? phone : (contact && !contact.includes('@') ? contact : '0000000000');
       await db.query(`
         INSERT INTO tb_otp (idno, mbphone, otp_code, ref_code, created_at, expires_at, is_used)
         VALUES (${sqlEsc(idno)}, ${sqlEsc(savePhone)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
       `);
 
-      let maskedPhone = 'ไม่ระบุเบอร์โทรศัพท์ในระบบ';
+      let maskedPhone = 'ยังไม่ได้ระบุเบอร์โทรศัพท์';
       if (hasPhone) {
         const clean = phone.replace(/[^0-9]/g, '');
         if (clean.length === 10) maskedPhone = clean.slice(0, 3) + '-xxx-' + clean.slice(6);
         else maskedPhone = clean.slice(0, 2) + 'x-xxx-' + clean.slice(-4);
+      }
+
+      let maskedEmail = 'ยังไม่ได้ระบุอีเมล';
+      if (hasEmail) {
+        const parts = email.split('@');
+        const namePart = parts[0];
+        const domPart = parts[1] || '';
+        maskedEmail = (namePart.length > 2 ? namePart.slice(0, 2) + '***' : namePart + '***') + '@' + domPart;
       }
 
       db.close();
@@ -477,7 +503,11 @@ export async function onRequest(context) {
         message: 'สร้างรหัส OTP สำหรับยืนยันตัวตนเรียบร้อยแล้ว (อายุ 5 นาที)',
         ref_code: refCode,
         masked_phone: maskedPhone,
+        masked_email: maskedEmail,
         has_phone: hasPhone,
+        has_email: hasEmail,
+        mbphone: hasPhone ? phone : (contact && !contact.includes('@') ? contact : ''),
+        email: hasEmail ? email : (contact && contact.includes('@') ? contact : ''),
         member_name: member.nname,
         member_position: member.nposit,
         demo_otp: otpCode
@@ -490,6 +520,8 @@ export async function onRequest(context) {
       const otpCode = String(body.otp_code || '').trim();
       const refCode = String(body.ref_code || '').trim();
       const newPass = String(body.new_password || '').trim();
+      const mbphone = String(body.mbphone || '').trim();
+      const email = String(body.email || '').trim();
 
       const digitCount = (newPass.match(/[0-9]/g) || []).length;
       const letterCount = (newPass.match(/[a-zA-Z]/g) || []).length;
@@ -515,13 +547,23 @@ export async function onRequest(context) {
       }
 
       const otpId = qOtp.rows[0].id;
-      await db.query(`UPDATE tbmain SET passc = ${sqlEsc(newPass)}, dayup = NOW(), chn = 1 WHERE idno = ${sqlEsc(idno)};`);
+      let extraMain = '';
+      if (mbphone) extraMain += `, mbphone = ${sqlEsc(mbphone)}`;
+      if (email) extraMain += `, email = ${sqlEsc(email)}`;
+
+      await db.query(`UPDATE tbmain SET passc = ${sqlEsc(newPass)}, dayup = NOW(), chn = 1${extraMain} WHERE idno = ${sqlEsc(idno)};`);
+      if (mbphone || email) {
+        let pUpdates = [];
+        if (mbphone) pUpdates.push(`mbphone = ${sqlEsc(mbphone)}`);
+        if (email) pUpdates.push(`email = ${sqlEsc(email)}`);
+        await db.query(`UPDATE person SET ${pUpdates.join(', ')} WHERE idno = ${sqlEsc(idno)};`);
+      }
       await db.query(`UPDATE tb_otp SET is_used = 1 WHERE id = ${Number(otpId)};`);
 
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: 'ตั้งรหัสผ่านใหม่สำเร็จเรียบร้อยแล้ว! สามารถเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที',
+        message: 'ตั้งรหัสผ่านใหม่และอัปเดตข้อมูลเบอร์โทรศัพท์/อีเมลสำเร็จเรียบร้อยแล้ว! สามารถเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที',
         new_password: newPass
       }), { headers: corsHeaders });
     }
