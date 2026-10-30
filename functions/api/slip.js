@@ -568,26 +568,80 @@ export async function onRequest(context) {
         VALUES (${sqlEsc(idno)}, ${sqlEsc(targetPhone)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
       `);
 
-      // Optional Real SMS Gateway integration (ThaiBulkSMS or Custom SMS Webhook via Cloudflare Env Vars)
+      // Real SMS Gateway integration (reads from tb_sms_config on 183.88.214.9 or Cloudflare Env Vars)
       let smsSent = false;
-      const smsMsg = `รหัส OTP สำหรับแก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ ${otpCode} (Ref: ${refCode}) มีอายุใช้งาน 5 นาที`;
-      if (context.env?.SMS_API_KEY && context.env?.SMS_API_SECRET) {
-        try {
-          const auth = btoa(`${context.env.SMS_API_KEY}:${context.env.SMS_API_SECRET}`);
-          const smsRes = await fetch('https://api-v2.thaibulksms.com/sms', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Basic ${auth}`,
-              'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: new URLSearchParams({
-              msisdn: targetPhone,
-              message: smsMsg,
-              sender: context.env.SMS_SENDER || 'SmartSMS'
-            }).toString()
-          });
-          smsSent = smsRes.ok;
-        } catch {}
+      let smsStatusDetail = 'ยังไม่ได้ตั้งค่า SMS Gateway API Key (แสดงรหัส OTP บนหน้าจอแทน)';
+      const smsMsg = `รหัส OTP แก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ ${otpCode} (Ref: ${refCode}) อายุ 5 นาที`;
+
+      try {
+        let provider = context.env?.SMS_PROVIDER || 'thaibulksms';
+        let apiKey = context.env?.SMS_API_KEY || '';
+        let apiSecret = context.env?.SMS_API_SECRET || '';
+        let sender = context.env?.SMS_SENDER || 'SmartSMS';
+
+        const qSmsCfg = await db.query("SELECT provider, api_key, api_secret, sender FROM tb_sms_config WHERE id = 1 LIMIT 1;");
+        if (qSmsCfg.rows.length > 0 && qSmsCfg.rows[0].api_key) {
+          provider = String(qSmsCfg.rows[0].provider || 'thaibulksms').trim().toLowerCase();
+          apiKey = String(qSmsCfg.rows[0].api_key || '').trim();
+          apiSecret = String(qSmsCfg.rows[0].api_secret || '').trim();
+          sender = String(qSmsCfg.rows[0].sender || 'SmartSMS').trim();
+        }
+
+        if (apiKey) {
+          if (provider === 'textbee') {
+            // TextBee.dev Android SMS Gateway (Free using Android phone SIM)
+            const intlPhone = targetPhone.startsWith('0') ? '+66' + targetPhone.slice(1) : targetPhone;
+            const smsRes = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${apiSecret}/send-sms`, {
+              method: 'POST',
+              headers: {
+                'x-api-key': apiKey,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                recipients: [intlPhone],
+                message: smsMsg
+              })
+            });
+            smsSent = smsRes.ok;
+            smsStatusDetail = smsSent ? 'ส่ง SMS ผ่านมือถือ Android Gateway (TextBee) สำเร็จ' : 'ส่ง SMS ผ่าน TextBee ไม่สำเร็จ (' + smsRes.status + ')';
+          } else if (provider === 'smsmkt') {
+            // SMSMKT Thailand
+            const smsRes = await fetch('https://portal-otp.smsmkt.com/api/send-message', {
+              method: 'POST',
+              headers: {
+                'api_key': apiKey,
+                'secret_key': apiSecret,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                message: smsMsg,
+                phone: targetPhone,
+                sender: sender
+              })
+            });
+            smsSent = smsRes.ok;
+            smsStatusDetail = smsSent ? 'ส่ง SMS ผ่าน SMSMKT สำเร็จ' : 'ส่ง SMS ผ่าน SMSMKT ไม่สำเร็จ (' + smsRes.status + ')';
+          } else {
+            // Default: ThaiBulkSMS API v2
+            const auth = btoa(`${apiKey}:${apiSecret}`);
+            const smsRes = await fetch('https://api-v2.thaibulksms.com/sms', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Basic ${auth}`,
+                'Content-Type': 'application/x-www-form-urlencoded'
+              },
+              body: new URLSearchParams({
+                msisdn: targetPhone,
+                message: smsMsg,
+                sender: sender || 'SmartSMS'
+              }).toString()
+            });
+            smsSent = smsRes.ok;
+            smsStatusDetail = smsSent ? 'ส่ง SMS ผ่าน ThaiBulkSMS สำเร็จ' : 'ส่ง SMS ผ่าน ThaiBulkSMS ไม่สำเร็จ (' + smsRes.status + ')';
+          }
+        }
+      } catch (smsErr) {
+        smsStatusDetail = 'เกิดข้อผิดพลาดในการส่ง SMS: ' + (smsErr?.message || String(smsErr));
       }
 
       let maskedEmail = 'ยังไม่ได้ระบุอีเมล';
@@ -613,6 +667,7 @@ export async function onRequest(context) {
         member_position: member.nposit,
         expires_in_seconds: 300,
         sms_sent: smsSent,
+        sms_status: smsStatusDetail,
         sms_preview: smsMsg,
         demo_otp: otpCode
       }), { headers: corsHeaders });

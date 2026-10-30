@@ -360,6 +360,14 @@ async function requestChpOtp() {
     document.getElementById('chpRefCode').textContent = data.ref_code || '-';
     document.getElementById('chpOtpCode').value = '';
     document.getElementById('chpOtpInfoRow').style.display = '';
+    if (document.getElementById('chpFallbackOtpBox')) {
+      if (data.sms_sent) {
+        document.getElementById('chpFallbackOtpBox').style.display = 'none';
+      } else {
+        document.getElementById('chpFallbackOtpCode').textContent = data.demo_otp || '------';
+        document.getElementById('chpFallbackOtpBox').style.display = 'block';
+      }
+    }
     startOtpCountdown('chpTimerText', false);
     showSmsNotification(data.masked_phone || chpPhone, data.demo_otp, data.ref_code);
     document.getElementById('chpOtpCode').focus();
@@ -370,6 +378,13 @@ async function requestChpOtp() {
       btn.disabled = false;
       btn.textContent = '📲 ขอรหัส OTP';
     }
+  }
+}
+
+function fillChpFallbackOtp() {
+  const code = document.getElementById('chpFallbackOtpCode') ? document.getElementById('chpFallbackOtpCode').textContent.trim() : '';
+  if (code && code !== '------') {
+    document.getElementById('chpOtpCode').value = code;
   }
 }
 
@@ -521,6 +536,15 @@ async function requestOtpCode() {
     if (document.getElementById('otpNewPasswordConfirm')) {
       document.getElementById('otpNewPasswordConfirm').value = '';
     }
+    if (document.getElementById('otpFallbackBox')) {
+      if (data.sms_sent) {
+        document.getElementById('otpFallbackBox').style.display = 'none';
+      } else {
+        document.getElementById('otpFallbackPhone').textContent = data.masked_phone || otpVerifiedPhone;
+        document.getElementById('otpFallbackCode').textContent = data.demo_otp || '------';
+        document.getElementById('otpFallbackBox').style.display = 'block';
+      }
+    }
 
     document.getElementById('otpStep1').style.display = 'none';
     document.getElementById('otpStep2').style.display = 'block';
@@ -532,6 +556,13 @@ async function requestOtpCode() {
   } finally {
     btn.disabled = false;
     btn.textContent = '📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP';
+  }
+}
+
+function fillModalFallbackOtp() {
+  const code = document.getElementById('otpFallbackCode') ? document.getElementById('otpFallbackCode').textContent.trim() : '';
+  if (code && code !== '------') {
+    document.getElementById('otpInputCode').value = code;
   }
 }
 
