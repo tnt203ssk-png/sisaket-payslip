@@ -195,8 +195,8 @@
                     <tr>
                       <td colspan="3" align="center">
                         <div id="loginErrorMsg" style="color:#cc0000; font-size:13px; font-weight:bold; display:none; padding:4px;"></div>
-                        <font color="#666666" size="-1">** ลืมรหัสผ่านโปรดติดต่อ ผู้ดูแลระบบ **</font><br>
-                        <a onclick="openOtpModal()" class="forgot-link-btn">🔑 ลืมรหัสผ่าน? (รีเซ็ตรหัสผ่านด้วย OTP)</a>
+                        <font color="#666666" size="-1">** ลืมรหัสผ่าน / แก้ไขรหัสผ่านด้วยตนเอง **</font><br>
+                        <a onclick="openOtpModal()" class="forgot-link-btn">📲 ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้รหัสผ่าน</a>
                       </td>
                     </tr>
                   </table>
@@ -271,7 +271,7 @@
             <tr>
               <td align="center"><br>
                 <font face="ms sans serif" size="3" color="#FF3333">
-                  <b>&lt;&lt; <a href="javascript:void(0)" onclick="showView('view-chpass')">เปลี่ยนรหัสผ่าน</a> &gt;&gt;</b>
+                  <b>&lt;&lt; <a href="javascript:void(0)" onclick="showView('view-chpass')">เปลี่ยนรหัสผ่าน (ยืนยัน OTP เบอร์โทรศัพท์)</a> &gt;&gt;</b>
                 </font>
                 ||
                 <font face="ms sans serif" size="3" color="#FF3333">
@@ -607,9 +607,9 @@
                   <tr>
                     <td>
                       <font face="ms sans serif" size="3">
-                        <font color="#FF0000"><b><u>โปรดอ่าน</u> !!</b></font>
-                        <br>1. พิมพ์รหัสผ่านใหม่ (New) ลงในช่องด้านล่างทั้ง 2 ช่องให้ตรงกันเพื่อเป็นการยืนยัน
-                        <br>2. ต้องปกปิดรหัสผ่านเป็นความลับเฉพาะตัวของท่าน <u>ห้าม</u>เปิดเผยแก่ผู้อื่น
+                        <font color="#FF0000"><b><u>โปรดอ่านขั้นตอนการเปลี่ยนรหัสผ่านด้วย OTP</u> !!</b></font>
+                        <br>1. ตรวจสอบ<b>หมายเลขโทรศัพท์ที่ลงทะเบียนไว้</b> แล้วคลิกปุ่ม <b>"📲 ขอรหัส OTP ยืนยันเบอร์โทรศัพท์"</b>
+                        <br>2. กรอกรหัส <b>OTP 6 หลัก</b> ที่ได้รับ และพิมพ์รหัสผ่านใหม่ (New) ลงในช่องด้านล่างทั้ง 2 ช่องให้ตรงกัน
                         <br>3. การเข้าระบบครั้งต่อไป <u>ต้องใช้</u> เลขบัตรประจำตัวประชาชน 13 หลัก เป็น "ชื่อผู้ใช้ (Username)" และใช้รหัสผ่านที่ท่านกำหนดใหม่ในครั้งนี้
                       </font>
                     </td>
@@ -620,17 +620,36 @@
             <tr>
               <td align="center"><br>
                 <form onsubmit="handleChangePassword(event)">
-                  <table width="460" border="1" align="center" cellpadding="8" cellspacing="0">
+                  <table width="540" border="1" align="center" cellpadding="8" cellspacing="0">
                     <tr>
                       <td align="center">
-                        <table width="94%" border="0" align="center" cellpadding="4">
+                        <table width="96%" border="0" align="center" cellpadding="4">
                           <tr>
-                            <td align="right"><font color="#0000CC"><strong>เบอร์โทรศัพท์มือถือ :</strong></font></td>
-                            <td><input type="text" id="chpPhone" size="22" maxlength="20" placeholder="เช่น 0812345678"></td>
+                            <td align="right" width="42%"><font color="#0000CC"><strong>เบอร์โทรศัพท์ที่ลงทะเบียน :</strong></font></td>
+                            <td>
+                              <input type="text" id="chpPhone" size="15" maxlength="10" placeholder="เช่น 0812345678" required>
+                              <button type="button" id="btnChpReqOtp" onclick="requestChpOtp()" style="background:#2563eb; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">📲 ขอรหัส OTP</button>
+                            </td>
+                          </tr>
+                          <tr id="chpOtpInfoRow" style="display:none;">
+                            <td colspan="2">
+                              <div style="background:#f0fdf4; border:1px solid #86efac; padding:8px 10px; border-radius:6px; font-size:13px; text-align:left;">
+                                📲 ส่งรหัสยืนยันไปยังเบอร์: <b id="chpMaskedPhone">-</b><br>
+                                🔢 <b>Ref Code:</b> <span id="chpRefCode">-</span> | <b>รหัส OTP 6 หลัก:</b>
+                                <span id="chpDemoOtp" style="background:#dcfce7; padding:2px 8px; border-radius:4px; font-weight:bold; color:#166534; font-size:14px;">-</span>
+                              </div>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td align="right"><font color="#009900"><strong>รหัสยืนยัน OTP (6 หลัก) :</strong></font></td>
+                            <td>
+                              <input type="text" id="chpOtpCode" size="12" maxlength="6" placeholder="รหัส OTP 6 หลัก" required style="font-weight:bold; color:#166534;">
+                              <font size="-1" color="#666666">(กดปุ่มขอรหัส OTP ด้านบน)</font>
+                            </td>
                           </tr>
                           <tr>
                             <td align="right"><font color="#0000CC"><strong>อีเมล (Email) :</strong></font></td>
-                            <td><input type="email" id="chpEmail" size="22" maxlength="100" placeholder="เช่น name@example.com"></td>
+                            <td><input type="email" id="chpEmail" size="25" maxlength="100" placeholder="เช่น name@example.com"></td>
                           </tr>
                           <tr>
                             <td align="right"><font color="#0000CC"><strong>กำหนดรหัสผ่านใหม่ (New) :</strong></font></td>
@@ -645,8 +664,8 @@
                           </tr>
                           <tr>
                             <td colspan="2" align="center" style="padding-top:10px;">
-                              <input type="submit" value=" ตกลง " style="padding:4px 14px; cursor:pointer;">
-                              <input type="reset" value="ยกเลิก" style="padding:4px 14px; cursor:pointer;">
+                              <input type="submit" value=" ยืนยัน OTP และบันทึกรหัสผ่านใหม่ " style="padding:5px 14px; cursor:pointer; font-weight:bold; background:#16a34a; color:#fff; border:1px solid #15803d; border-radius:4px;">
+                              <input type="reset" value="ยกเลิก" style="padding:5px 14px; cursor:pointer;">
                             </td>
                           </tr>
                         </table>
@@ -672,77 +691,73 @@
   </div>
 
   <!-- ==================================================================== -->
-  <!-- MODAL: ค้นหาและรีเซ็ตรหัสผ่านด้วย OTP (กรณีลืมรหัสผ่าน) -->
+  <!-- MODAL: ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้ไขรหัสผ่าน -->
   <!-- ==================================================================== -->
   <div id="otpModal" class="modal-overlay">
     <div class="modal-card">
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
-        <strong style="color:#1e40af; font-size:16px;">🔑 ค้นหาและรีเซ็ตรหัสผ่านสมาชิกด้วย OTP (tbmain)</strong>
+        <strong style="color:#1e40af; font-size:15.5px;">📲 ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้รหัสผ่าน</strong>
         <button onclick="closeOtpModal()" style="border:none; background:#f1f5f9; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">✕</button>
       </div>
 
-      <!-- Step 1: กรอกเลข 13 หลัก -->
+      <!-- Step 1: กรอกเลข 13 หลัก + หมายเลขโทรศัพท์ที่ลงทะเบียนไว้ -->
       <div id="otpStep1">
-        <p style="font-size:13px; color:#334155; margin-top:0;">
-          กรอกเลขประจำตัวประชาชน 13 หลัก เพื่อค้นหาข้อมูลสมาชิก เบอร์โทรศัพท์ อีเมล และรับรหัสยืนยันตัวตน (OTP)
+        <p style="font-size:13px; color:#334155; margin-top:0; line-height:1.5;">
+          กรุณากรอก <b>เลขประจำตัวประชาชน 13 หลัก</b> และ <b>หมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ในระบบ</b> เพื่อรับรหัสยืนยันตัวตน (OTP) สำหรับตั้งรหัสผ่านใหม่
         </p>
         <div style="margin-bottom:10px;">
-          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">เลขประจำตัวประชาชน 13 หลัก:</label>
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">1. เลขประจำตัวประชาชน 13 หลัก:</label>
           <input type="text" id="otpIdno" maxlength="13" placeholder="เช่น 3330100466968" style="width:100%; padding:8px; font-size:15px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
         </div>
-        <div style="margin-bottom:12px;">
-          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">เบอร์โทรศัพท์มือถือ หรือ อีเมล (ใช้ยืนยัน/ลงทะเบียน):</label>
-          <input type="text" id="otpContactInput" placeholder="เช่น 0812345678 หรือ example@gmail.com" style="width:100%; padding:8px; font-size:14px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+        <div style="margin-bottom:14px;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">2. หมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก):</label>
+          <input type="tel" id="otpContactInput" maxlength="12" placeholder="กรอกเบอร์โทรศัพท์ที่ลงทะเบียนไว้ เช่น 0652424982" style="width:100%; padding:8px; font-size:15px; border:1px solid #2563eb; border-radius:4px; box-sizing:border-box; background:#eff6ff;">
         </div>
-        <button onclick="requestOtpCode()" id="btnReqOtp" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">
-          📲 ค้นหาสมาชิกและขอรหัส OTP
+        <button onclick="requestOtpCode()" id="btnReqOtp" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
+          📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP
         </button>
       </div>
 
-      <!-- Step 2: ยืนยัน OTP และตั้งรหัสผ่านใหม่ 10 ตัวอักษร -->
+      <!-- Step 2: ยืนยัน OTP และตั้งรหัสผ่านใหม่ -->
       <div id="otpStep2" style="display:none;">
         <div style="background:#f0fdf4; border:1px solid #86efac; padding:10px; border-radius:6px; font-size:13px; margin-bottom:10px;">
           <div>👤 <b>ชื่อ-สกุล:</b> <span id="otpMemName">-</span></div>
           <div>🏥 <b>ตำแหน่ง:</b> <span id="otpMemPos">-</span></div>
-          <div>📱 <b>เบอร์มือถือที่ลงทะเบียน:</b> <span id="otpMaskedPhone">-</span></div>
+          <div>📱 <b>เบอร์โทรศัพท์ที่ยืนยันแล้ว:</b> <span id="otpMaskedPhone" style="color:#1d4ed8; font-weight:bold;">-</span></div>
           <div>✉️ <b>อีเมลที่ลงทะเบียน:</b> <span id="otpMaskedEmail">-</span></div>
-          <div style="margin-top:4px; color:#15803d;">🔢 <b>Ref Code:</b> <span id="otpRefCode">-</span> | <b>รหัส OTP ยืนยันตัวตน:</b> <span id="otpDemoCode" style="background:#dcfce7; padding:2px 6px; border-radius:4px; font-weight:bold; color:#166534;">-</span></div>
+          <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; color:#15803d;">
+            🔢 <b>Ref Code:</b> <span id="otpRefCode">-</span> | <b>รหัส OTP 6 หลักของคุณ:</b>
+            <span id="otpDemoCode" style="background:#dcfce7; padding:2px 8px; border-radius:4px; font-weight:bold; color:#166534; font-size:15px;">-</span>
+          </div>
         </div>
 
-        <div style="display:flex; gap:8px; margin-bottom:10px;">
-          <div style="flex:1;">
-            <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:3px;">📱 เบอร์โทรศัพท์ (แก้ไข/บันทึกได้):</label>
-            <input type="text" id="otpEditPhone" maxlength="20" placeholder="เช่น 0812345678" style="width:100%; padding:6px; font-size:13px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
-          </div>
-          <div style="flex:1;">
-            <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:3px;">✉️ อีเมล (แก้ไข/บันทึกได้):</label>
-            <input type="email" id="otpEditEmail" maxlength="100" placeholder="เช่น name@gmail.com" style="width:100%; padding:6px; font-size:13px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
-          </div>
-        </div>
+        <input type="hidden" id="otpEditPhone">
+        <input type="hidden" id="otpEditEmail">
 
         <div style="margin-bottom:10px;">
-          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">กรอกรหัส OTP 6 หลัก:</label>
-          <input type="text" id="otpInputCode" maxlength="6" placeholder="รหัส OTP 6 หลัก" style="width:100%; padding:7px; font-size:15px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#166534;">📲 กรอกรหัสยืนยัน OTP (6 หลัก):</label>
+          <input type="text" id="otpInputCode" maxlength="6" placeholder="กรอกรหัส OTP 6 หลัก" style="width:100%; padding:8px; font-size:16px; font-weight:bold; letter-spacing:2px; border:2px solid #16a34a; border-radius:4px; box-sizing:border-box; text-align:center;">
         </div>
 
         <div style="margin-bottom:8px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <label style="font-size:13px; font-weight:bold;">ตั้งรหัสผ่านใหม่ (10 ตัวอักษร):</label>
-            <button type="button" onclick="autoGenPassword()" style="background:#e0e7ff; color:#1e40af; border:1px solid #93c5fd; padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">🎲 สุ่มรหัสผ่านตามเกณฑ์</button>
+            <label style="font-size:13px; font-weight:bold;">🔐 กำหนดรหัสผ่านใหม่ (อย่างน้อย 4 ตัวอักษร):</label>
+            <div style="display:flex; gap:4px;">
+              <button type="button" onclick="usePhoneAsOtpPassword()" style="background:#dbeafe; color:#1e40af; border:1px solid #93c5fd; padding:2px 6px; border-radius:4px; font-size:11.5px; cursor:pointer; font-weight:bold;">📱 ใช้เบอร์โทร</button>
+              <button type="button" onclick="autoGenPassword()" style="background:#e0e7ff; color:#1e40af; border:1px solid #93c5fd; padding:2px 6px; border-radius:4px; font-size:11.5px; cursor:pointer; font-weight:bold;">🎲 สุ่มรหัสผ่าน</button>
+            </div>
           </div>
-          <input type="text" id="otpNewPassword" maxlength="10" oninput="validateOtpPasswordRule()" placeholder="เช่น Abc123456@" style="width:100%; padding:7px; font-size:15px; font-family:Consolas, monospace; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+          <input type="text" id="otpNewPassword" maxlength="30" placeholder="กรอกรหัสผ่านใหม่ที่ต้องการ" style="width:100%; padding:8px; font-size:15px; font-family:Consolas, monospace; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
         </div>
 
         <div style="margin-bottom:12px;">
-          <span class="rule-badge" id="ruleDigit">ตัวเลขอารบิก 6 ตัว (0/6)</span>
-          <span class="rule-badge" id="ruleLetter">อักษรอังกฤษ 3 ตัว (0/3)</span>
-          <span class="rule-badge" id="ruleSpec">อักขระพิเศษ 1 ตัว (0/1)</span>
-          <span class="rule-badge" id="ruleLen">รวม 10 ตัว (0/10)</span>
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">🔐 ยืนยันรหัสผ่านใหม่อีกครั้ง:</label>
+          <input type="text" id="otpNewPasswordConfirm" maxlength="30" placeholder="กรอกรหัสผ่านใหม่อีกครั้งให้ตรงกัน" style="width:100%; padding:8px; font-size:15px; font-family:Consolas, monospace; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
         </div>
 
         <div style="display:flex; gap:8px;">
-          <button onclick="submitOtpReset()" id="btnSubmitOtpReset" style="flex:1; padding:10px; background:#16a34a; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">
-            💾 บันทึกรหัสผ่านใหม่ลง tbmain
+          <button onclick="submitOtpReset()" id="btnSubmitOtpReset" style="flex:1; padding:10px; background:#16a34a; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
+            💾 ยืนยัน OTP และบันทึกรหัสผ่านใหม่
           </button>
           <button onclick="resetOtpModal()" style="padding:10px 14px; background:#e2e8f0; color:#334155; border:none; border-radius:5px; cursor:pointer;">
             ย้อนกลับ

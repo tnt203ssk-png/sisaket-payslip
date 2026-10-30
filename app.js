@@ -268,7 +268,58 @@ async function openSlipDetail(nauto) {
   }
 }
 
-// เปลี่ยนรหัสผ่าน
+// ============================================================================
+// ระบบเปลี่ยนรหัสผ่านเมื่อล็อกอินแล้ว (ยืนยัน OTP ผ่านเบอร์โทรศัพท์ที่ลงทะเบียนไว้)
+// ============================================================================
+let chpCurrentRef = '';
+
+async function requestChpOtp() {
+  if (!currentMember) return;
+  const chpPhone = document.getElementById('chpPhone') ? document.getElementById('chpPhone').value.trim() : '';
+  if (!chpPhone || chpPhone.replace(/[^0-9]/g, '').length < 9) {
+    alert('กรุณากรอกหมายเลขโทรศัพท์ที่ลงทะเบียนไว้ (10 หลัก) ก่อนกดขอรหัส OTP');
+    return;
+  }
+
+  const btn = document.getElementById('btnChpReqOtp');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'กำลังส่ง OTP...';
+  }
+
+  try {
+    const res = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'request_otp',
+        idno: currentMember.idno,
+        phone: chpPhone,
+        logged_in: true
+      })
+    });
+    const data = await res.json();
+    if (!data.success) {
+      alert(data.message || 'ไม่สามารถขอรหัส OTP ได้');
+      return;
+    }
+
+    chpCurrentRef = data.ref_code;
+    document.getElementById('chpMaskedPhone').textContent = data.masked_phone || chpPhone;
+    document.getElementById('chpRefCode').textContent = data.ref_code || '-';
+    document.getElementById('chpDemoOtp').textContent = data.demo_otp || '-';
+    document.getElementById('chpOtpCode').value = data.demo_otp || '';
+    document.getElementById('chpOtpInfoRow').style.display = '';
+  } catch (err) {
+    alert('เกิดข้อผิดพลาด: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '📲 ขอรหัส OTP';
+    }
+  }
+}
+
 async function handleChangePassword(e) {
   e.preventDefault();
   if (!currentMember) return;
@@ -277,7 +328,12 @@ async function handleChangePassword(e) {
   const p2 = document.getElementById('newPwd2').value.trim();
   const chpPhone = document.getElementById('chpPhone') ? document.getElementById('chpPhone').value.trim() : '';
   const chpEmail = document.getElementById('chpEmail') ? document.getElementById('chpEmail').value.trim() : '';
+  const chpOtpCode = document.getElementById('chpOtpCode') ? document.getElementById('chpOtpCode').value.trim() : '';
 
+  if (!chpOtpCode || chpOtpCode.length !== 6) {
+    alert('กรุณากดปุ่ม "📲 ขอรหัส OTP" และกรอกรหัสยืนยัน OTP 6 หลักก่อนเปลี่ยนรหัสผ่าน');
+    return;
+  }
   if (p1 !== p2) {
     alert('รหัสผ่านใหม่ทั้ง 2 ช่องไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง');
     return;
@@ -295,6 +351,8 @@ async function handleChangePassword(e) {
         action: 'change_password',
         idno: currentMember.idno,
         new_password: p1,
+        otp_code: chpOtpCode,
+        ref_code: chpCurrentRef,
         mbphone: chpPhone,
         email: chpEmail
       })
@@ -303,9 +361,11 @@ async function handleChangePassword(e) {
     if (data.success) {
       currentMember.mbphone = chpPhone;
       currentMember.email = chpEmail;
-      alert(data.message || 'เปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
+      alert(data.message || 'ยืนยันรหัส OTP และเปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
       document.getElementById('newPwd1').value = '';
       document.getElementById('newPwd2').value = '';
+      document.getElementById('chpOtpCode').value = '';
+      document.getElementById('chpOtpInfoRow').style.display = 'none';
       showView('view-months');
     } else {
       alert(data.message || 'ไม่สามารถเปลี่ยนรหัสผ่านได้');
@@ -325,10 +385,11 @@ function handleLogout() {
 }
 
 // ============================================================================
-// ระบบค้นหาและรีเซ็ตรหัสผ่านด้วย OTP (กรณีลืมรหัสผ่าน)
+// ระบบยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้ไขรหัสผ่าน
 // ============================================================================
 let otpCurrentRef = '';
 let otpCurrentIdno = '';
+let otpVerifiedPhone = '';
 
 function openOtpModal() {
   resetOtpModal();
@@ -348,35 +409,42 @@ function resetOtpModal() {
   document.getElementById('otpStep2').style.display = 'none';
   document.getElementById('otpInputCode').value = '';
   document.getElementById('otpNewPassword').value = '';
-  validateOtpPasswordRule();
+  if (document.getElementById('otpNewPasswordConfirm')) {
+    document.getElementById('otpNewPasswordConfirm').value = '';
+  }
 }
 
 async function requestOtpCode() {
   const idno = document.getElementById('otpIdno').value.trim();
-  const contact = document.getElementById('otpContactInput') ? document.getElementById('otpContactInput').value.trim() : '';
+  const phone = document.getElementById('otpContactInput') ? document.getElementById('otpContactInput').value.trim() : '';
   if (idno.length !== 13) {
     alert('กรุณากรอกเลขประจำตัวประชาชน 13 หลักให้ครบถ้วน');
+    return;
+  }
+  if (!phone || phone.replace(/[^0-9]/g, '').length < 9) {
+    alert('กรุณากรอกหมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก) เพื่อยืนยันตัวตน');
     return;
   }
 
   const btn = document.getElementById('btnReqOtp');
   btn.disabled = true;
-  btn.textContent = 'กำลังค้นหาข้อมูลสมาชิก...';
+  btn.textContent = 'กำลังตรวจสอบเบอร์โทรศัพท์ที่ลงทะเบียน...';
 
   try {
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'request_otp', idno, contact })
+      body: JSON.stringify({ action: 'request_otp', idno, phone })
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || 'ไม่พบข้อมูลสมาชิก');
+      alert(data.message || 'ไม่สามารถยืนยันหมายเลขโทรศัพท์ได้');
       return;
     }
 
     otpCurrentIdno = idno;
     otpCurrentRef = data.ref_code;
+    otpVerifiedPhone = data.mbphone || phone.replace(/[^0-9]/g, '');
 
     document.getElementById('otpMemName').textContent = data.member_name || '-';
     document.getElementById('otpMemPos').textContent = data.member_position || '-';
@@ -385,7 +453,7 @@ async function requestOtpCode() {
       document.getElementById('otpMaskedEmail').textContent = data.masked_email || '-';
     }
     if (document.getElementById('otpEditPhone')) {
-      document.getElementById('otpEditPhone').value = data.mbphone || '';
+      document.getElementById('otpEditPhone').value = otpVerifiedPhone;
     }
     if (document.getElementById('otpEditEmail')) {
       document.getElementById('otpEditEmail').value = data.email || '';
@@ -393,15 +461,27 @@ async function requestOtpCode() {
     document.getElementById('otpRefCode').textContent = data.ref_code || '-';
     document.getElementById('otpDemoCode').textContent = data.demo_otp || '-';
     document.getElementById('otpInputCode').value = data.demo_otp || '';
+    document.getElementById('otpNewPassword').value = '';
+    if (document.getElementById('otpNewPasswordConfirm')) {
+      document.getElementById('otpNewPasswordConfirm').value = '';
+    }
 
-    autoGenPassword();
     document.getElementById('otpStep1').style.display = 'none';
     document.getElementById('otpStep2').style.display = 'block';
   } catch (err) {
     alert('เกิดข้อผิดพลาด: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '📲 ค้นหาสมาชิกและขอรหัส OTP';
+    btn.textContent = '📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP';
+  }
+}
+
+function usePhoneAsOtpPassword() {
+  if (otpVerifiedPhone) {
+    document.getElementById('otpNewPassword').value = otpVerifiedPhone;
+    if (document.getElementById('otpNewPasswordConfirm')) {
+      document.getElementById('otpNewPasswordConfirm').value = otpVerifiedPhone;
+    }
   }
 }
 
@@ -420,37 +500,28 @@ function autoGenPassword() {
 
   const pwd = `${l1}${l2}${l3}${d6}${sp}`;
   document.getElementById('otpNewPassword').value = pwd;
-  validateOtpPasswordRule();
-}
-
-function validateOtpPasswordRule() {
-  const pwd = document.getElementById('otpNewPassword').value;
-  const dCount = (pwd.match(/[0-9]/g) || []).length;
-  const lCount = (pwd.match(/[a-zA-Z]/g) || []).length;
-  const sCount = (pwd.match(/[^a-zA-Z0-9]/g) || []).length;
-  const len = pwd.length;
-
-  const setBadge = (id, text, ok) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.textContent = text;
-    el.className = 'rule-badge' + (ok ? ' valid' : '');
-  };
-
-  setBadge('ruleDigit', `ตัวเลขอารบิก 6 ตัว (${dCount}/6)`, dCount === 6);
-  setBadge('ruleLetter', `อักษรอังกฤษ 3 ตัว (${lCount}/3)`, lCount === 3);
-  setBadge('ruleSpec', `อักขระพิเศษ 1 ตัว (${sCount}/1)`, sCount === 1);
-  setBadge('ruleLen', `รวม 10 ตัว (${len}/10)`, len === 10);
+  if (document.getElementById('otpNewPasswordConfirm')) {
+    document.getElementById('otpNewPasswordConfirm').value = pwd;
+  }
 }
 
 async function submitOtpReset() {
   const otpCode = document.getElementById('otpInputCode').value.trim();
   const newPass = document.getElementById('otpNewPassword').value.trim();
+  const confirmPass = document.getElementById('otpNewPasswordConfirm') ? document.getElementById('otpNewPasswordConfirm').value.trim() : newPass;
   const editPhone = document.getElementById('otpEditPhone') ? document.getElementById('otpEditPhone').value.trim() : '';
   const editEmail = document.getElementById('otpEditEmail') ? document.getElementById('otpEditEmail').value.trim() : '';
 
-  if (!otpCode) {
-    alert('กรุณากรอกรหัส OTP 6 หลัก');
+  if (!otpCode || otpCode.length !== 6) {
+    alert('กรุณากรอกรหัสยืนยัน OTP 6 หลัก');
+    return;
+  }
+  if (!newPass || newPass.length < 4) {
+    alert('กรุณากำหนดรหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร');
+    return;
+  }
+  if (newPass !== confirmPass) {
+    alert('รหัสผ่านใหม่และยืนยันรหัสผ่านใหม่ไม่ตรงกัน กรุณาตรวจสอบอีกครั้ง');
     return;
   }
 
@@ -477,7 +548,7 @@ async function submitOtpReset() {
       return;
     }
 
-    alert(`✅ ตั้งรหัสผ่านใหม่และบันทึกข้อมูลติดต่อสำเร็จ!\n\nเลขประชาชน: ${otpCurrentIdno}\nรหัสผ่านใหม่: ${newPass}\n\nระบบได้กรอกรหัสผ่านใหม่ในช่องเข้าสู่ระบบให้เรียบร้อยแล้ว`);
+    alert(`✅ ยืนยัน OTP ผ่านหมายเลขโทรศัพท์และตั้งรหัสผ่านใหม่สำเร็จ!\n\nเลขประชาชน: ${otpCurrentIdno}\nรหัสผ่านใหม่: ${newPass}\n\nระบบได้กรอกรหัสผ่านใหม่ในช่องเข้าสู่ระบบให้เรียบร้อยแล้ว`);
     document.getElementById('usnm').value = otpCurrentIdno;
     document.getElementById('pswd').value = newPass;
     closeOtpModal();

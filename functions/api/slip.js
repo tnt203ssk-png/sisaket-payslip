@@ -419,11 +419,28 @@ export async function onRequest(context) {
       }), { headers: corsHeaders });
     }
 
-    // 4. Change Password & Update Phone/Email (logged-in user)
+    // Helper to normalize Thai mobile phone numbers (e.g. "065-242-4982" or "652424982" -> "0652424982")
+    const normPhone = (val) => {
+      let d = String(val || '').trim().replace(/[^0-9]/g, '');
+      if (d === '0') return '';
+      if (d.length === 9 && !d.startsWith('0')) d = '0' + d;
+      if (d.length === 11 && d.startsWith('66')) d = '0' + d.slice(2);
+      return d;
+    };
+
+    const maskPhoneStr = (clean) => {
+      if (!clean || clean.length < 9) return 'ยังไม่ได้ลงทะเบียนเบอร์โทรศัพท์';
+      if (clean.length === 10) return clean.slice(0, 3) + '-xxx-' + clean.slice(6);
+      return clean.slice(0, 2) + 'x-xxx-' + clean.slice(-4);
+    };
+
+    // 4. Change Password & Update Phone/Email (logged-in user - requires OTP verification via registered phone)
     if (action === 'change_password') {
       const idno = String(body.idno || '').trim();
       const newPass = String(body.new_password || '').trim();
-      const mbphone = body.mbphone !== undefined ? String(body.mbphone).trim() : null;
+      const otpCode = String(body.otp_code || '').trim();
+      const refCode = String(body.ref_code || '').trim();
+      const mbphone = body.mbphone !== undefined ? normPhone(body.mbphone) : null;
       const email = body.email !== undefined ? String(body.email).trim() : null;
 
       if (!idno || !newPass || newPass.length < 4) {
@@ -431,63 +448,119 @@ export async function onRequest(context) {
         return new Response(JSON.stringify({ success: false, message: 'กรุณากำหนดรหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร' }), { headers: corsHeaders });
       }
 
+      if (!otpCode) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'กรุณากดขอรหัส OTP และกรอกรหัส OTP 6 หลักเพื่อยืนยันตัวตนผ่านหมายเลขโทรศัพท์ก่อนเปลี่ยนรหัสผ่าน' }), { headers: corsHeaders });
+      }
+
+      const qOtp = await db.query(`
+        SELECT id FROM tb_otp
+        WHERE idno = ${sqlEsc(idno)} AND otp_code = ${sqlEsc(otpCode)} AND ref_code = ${sqlEsc(refCode)} AND is_used = 0
+        ORDER BY id DESC LIMIT 1;
+      `);
+
+      if (qOtp.rows.length === 0) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP ไม่ถูกต้องหรือหมดอายุ กรุณาขอรหัส OTP ใหม่' }), { headers: corsHeaders });
+      }
+
+      const otpId = qOtp.rows[0].id;
       let extraSet = '';
-      if (mbphone !== null) extraSet += `, mbphone = ${sqlEsc(mbphone)}`;
+      if (mbphone !== null && mbphone !== '') extraSet += `, mbphone = ${sqlEsc(mbphone)}`;
       if (email !== null) extraSet += `, email = ${sqlEsc(email)}`;
 
       await db.query(`UPDATE tbmain SET passc = ${sqlEsc(newPass)}, dayup = NOW(), chn = 1${extraSet} WHERE idno = ${sqlEsc(idno)};`);
-      if (mbphone !== null || email !== null) {
+      if ((mbphone !== null && mbphone !== '') || email !== null) {
         let pSet = [];
-        if (mbphone !== null) pSet.push(`mbphone = ${sqlEsc(mbphone)}`);
+        if (mbphone !== null && mbphone !== '') pSet.push(`mbphone = ${sqlEsc(mbphone)}`);
         if (email !== null) pSet.push(`email = ${sqlEsc(email)}`);
-        await db.query(`UPDATE person SET ${pSet.join(', ')} WHERE idno = ${sqlEsc(idno)};`);
+        if (pSet.length > 0) {
+          await db.query(`UPDATE person SET ${pSet.join(', ')} WHERE idno = ${sqlEsc(idno)};`);
+        }
       }
+      await db.query(`UPDATE tb_otp SET is_used = 1 WHERE id = ${Number(otpId)};`);
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: 'บันทึกเปลี่ยนรหัสผ่านและข้อมูลติดต่อ (เบอร์โทรศัพท์/อีเมล) เรียบร้อยแล้ว!'
+        message: 'ยืนยันรหัส OTP และบันทึกเปลี่ยนรหัสผ่านใหม่เรียบร้อยแล้ว!'
       }), { headers: corsHeaders });
     }
 
-    // 5. Request OTP for Forgot Password
+    // 5. Request OTP via Registered Phone Number
     if (action === 'request_otp') {
       const idno = String(body.idno || '').trim();
-      const contact = String(body.contact || '').trim();
+      const rawInputPhone = String(body.phone || body.contact || '').trim();
+      const inputPhone = normPhone(rawInputPhone);
+      const isLoggedIn = Boolean(body.logged_in);
+
       if (!idno || idno.length !== 13) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'กรุณากรอกเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
       }
 
-      const qMem = await db.query(`SELECT noman, nname, nobank, idno, nposit, COALESCE(mbphone, '') AS mbphone, COALESCE(email, '') AS email FROM tbmain WHERE idno = ${sqlEsc(idno)} LIMIT 1;`);
+      const qMem = await db.query(`
+        SELECT m.noman, m.nname, m.nobank, m.idno, m.nposit,
+               COALESCE(NULLIF(m.mbphone, '0'), p.mbphone, '') AS mbphone,
+               COALESCE(NULLIF(m.email, ''), p.email, '') AS email
+        FROM tbmain m
+        LEFT JOIN person p ON m.idno COLLATE utf8_general_ci = p.idno COLLATE utf8_general_ci
+        WHERE m.idno = ${sqlEsc(idno)}
+        LIMIT 1;
+      `);
       if (qMem.rows.length === 0) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'ไม่พบเลขประจำตัวประชาชนนี้ในระบบทะเบียนสมาชิก tbmain' }), { headers: corsHeaders });
       }
 
       const member = qMem.rows[0];
-      const phone = String(member.mbphone || '').trim();
+      const regPhone = normPhone(member.mbphone);
       const email = String(member.email || '').trim();
-      const hasPhone = phone.length >= 9 && phone !== '0';
+      const hasPhone = regPhone.length >= 9;
       const hasEmail = email.includes('@');
+      const maskedRegPhone = maskPhoneStr(regPhone);
 
-      // If user also typed a phone/email in Step 1 and the DB had none (or matched), we can pre-fill it
+      if (hasPhone) {
+        if (!inputPhone) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            message: `กรุณากรอกหมายเลขโทรศัพท์ที่ลงทะเบียนไว้ (${maskedRegPhone}) เพื่อยืนยันตัวตนและรับรหัส OTP`
+          }), { headers: corsHeaders });
+        }
+        if (inputPhone !== regPhone) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            message: `หมายเลขโทรศัพท์ที่กรอกไม่ตรงกับหมายเลขที่ลงทะเบียนไว้ในระบบ (${maskedRegPhone})`
+          }), { headers: corsHeaders });
+        }
+      } else {
+        if (!isLoggedIn) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            message: 'ไม่พบหมายเลขโทรศัพท์ที่ลงทะเบียนไว้สำหรับเลขประชาชนนี้ กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มเบอร์โทรศัพท์ในระบบก่อน'
+          }), { headers: corsHeaders });
+        }
+        if (!inputPhone || inputPhone.length < 9) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            message: 'กรุณากรอกหมายเลขโทรศัพท์มือถือ 10 หลักของท่านเพื่อลงทะเบียนและรับรหัส OTP'
+          }), { headers: corsHeaders });
+        }
+      }
+
+      const targetPhone = hasPhone ? regPhone : inputPhone;
       const otpCode = String(Math.floor(100000 + Math.random() * 900000));
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let refCode = '';
       for (let i = 0; i < 4; i++) refCode += chars[Math.floor(Math.random() * chars.length)];
 
-      const savePhone = hasPhone ? phone : (contact && !contact.includes('@') ? contact : '0000000000');
       await db.query(`
         INSERT INTO tb_otp (idno, mbphone, otp_code, ref_code, created_at, expires_at, is_used)
-        VALUES (${sqlEsc(idno)}, ${sqlEsc(savePhone)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
+        VALUES (${sqlEsc(idno)}, ${sqlEsc(targetPhone)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
       `);
-
-      let maskedPhone = 'ยังไม่ได้ระบุเบอร์โทรศัพท์';
-      if (hasPhone) {
-        const clean = phone.replace(/[^0-9]/g, '');
-        if (clean.length === 10) maskedPhone = clean.slice(0, 3) + '-xxx-' + clean.slice(6);
-        else maskedPhone = clean.slice(0, 2) + 'x-xxx-' + clean.slice(-4);
-      }
 
       let maskedEmail = 'ยังไม่ได้ระบุอีเมล';
       if (hasEmail) {
@@ -500,38 +573,34 @@ export async function onRequest(context) {
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: 'สร้างรหัส OTP สำหรับยืนยันตัวตนเรียบร้อยแล้ว (อายุ 5 นาที)',
+        message: `ยืนยันหมายเลขโทรศัพท์ (${maskPhoneStr(targetPhone)}) สำเร็จ! สร้างรหัส OTP เรียบร้อยแล้ว (อายุ 5 นาที)`,
         ref_code: refCode,
-        masked_phone: maskedPhone,
+        masked_phone: maskPhoneStr(targetPhone),
         masked_email: maskedEmail,
-        has_phone: hasPhone,
+        has_phone: true,
         has_email: hasEmail,
-        mbphone: hasPhone ? phone : (contact && !contact.includes('@') ? contact : ''),
-        email: hasEmail ? email : (contact && contact.includes('@') ? contact : ''),
+        mbphone: targetPhone,
+        email: email,
         member_name: member.nname,
         member_position: member.nposit,
         demo_otp: otpCode
       }), { headers: corsHeaders });
     }
 
-    // 6. Verify OTP & Reset Password (6 digits + 3 English letters + 1 special char = 10 chars)
+    // 6. Verify OTP & Reset Password
     if (action === 'reset_password_otp') {
       const idno = String(body.idno || '').trim();
       const otpCode = String(body.otp_code || '').trim();
       const refCode = String(body.ref_code || '').trim();
       const newPass = String(body.new_password || '').trim();
-      const mbphone = String(body.mbphone || '').trim();
+      const mbphone = normPhone(body.mbphone);
       const email = String(body.email || '').trim();
 
-      const digitCount = (newPass.match(/[0-9]/g) || []).length;
-      const letterCount = (newPass.match(/[a-zA-Z]/g) || []).length;
-      const specialCount = (newPass.match(/[^a-zA-Z0-9]/g) || []).length;
-
-      if (newPass.length !== 10 || digitCount !== 6 || letterCount !== 3 || specialCount !== 1) {
+      if (!newPass || newPass.length < 4) {
         db.close();
         return new Response(JSON.stringify({
           success: false,
-          message: `รหัสผ่านต้องมี 10 ตัวอักษร ประกอบด้วย ตัวเลข 6 ตัว (มี ${digitCount}), ภาษาอังกฤษ 3 ตัว (มี ${letterCount}), อักขระพิเศษ 1 ตัว (มี ${specialCount})`
+          message: 'กรุณากำหนดรหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร'
         }), { headers: corsHeaders });
       }
 
@@ -563,7 +632,7 @@ export async function onRequest(context) {
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: 'ตั้งรหัสผ่านใหม่และอัปเดตข้อมูลเบอร์โทรศัพท์/อีเมลสำเร็จเรียบร้อยแล้ว! สามารถเข้าสู่ระบบด้วยรหัสผ่านใหม่ได้ทันที',
+        message: 'ยืนยันรหัส OTP ผ่านหมายเลขโทรศัพท์และเปลี่ยนรหัสผ่านใหม่สำเร็จเรียบร้อยแล้ว!',
         new_password: newPass
       }), { headers: corsHeaders });
     }
