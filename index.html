@@ -1,0 +1,733 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<HTML lang="th">
+<HEAD>
+  <META content="text/html; charset=utf-8" http-equiv="Content-Type">
+  <META name="viewport" content="width=device-width, initial-scale=1.0">
+  <META NAME="KEYWORDS" CONTENT="ระบบแจ้งเงินเดือนออนไลน์, อบจ.ศรีสะเกษ, กองสาธารณสุข, รพ.สต.">
+  <META NAME="AUTHOR" CONTENT="ระบบแจ้งเงินเดือน อบจ.ศรีสะเกษ">
+  <TITLE>ระบบแจ้งเงินเดือนออนไลน์ กองสาธารณสุข องค์การบริหารส่วนจังหวัดศรีสะเกษ (PaySlip)</TITLE>
+
+  <!-- DataTables & jQuery (เหมือนเว็บต้นฉบับ http://183.88.214.9/webserv/slip/) -->
+  <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.12.0/css/jquery.dataTables.css">
+  <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.5.1.js"></script>
+  <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.12.0/js/jquery.dataTables.js"></script>
+
+  <style>
+    body {
+      background-image: url("images/bkgnd05.png");
+      margin: 8px;
+      font-family: "MS Sans Serif", Tahoma, sans-serif;
+    }
+    .main-container {
+      width: 768px;
+      max-width: 100%;
+      margin: 0 auto;
+      background-color: #FFFFFF;
+      border: 1px solid #CCCCCC;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+    .banner-img {
+      width: 100%;
+      max-width: 768px;
+      display: block;
+      border: 0;
+    }
+    .login-box {
+      width: 340px;
+      max-width: 95%;
+      background-color: #CCCCCC;
+      margin: 0 auto;
+    }
+    .forgot-link-btn {
+      display: inline-block;
+      background: #eff6ff;
+      color: #1e40af;
+      border: 1px solid #93c5fd;
+      padding: 5px 12px;
+      border-radius: 5px;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: bold;
+      margin-top: 6px;
+      cursor: pointer;
+    }
+    .forgot-link-btn:hover {
+      background: #1e40af;
+      color: #ffffff;
+    }
+    .top-print-bar {
+      background: linear-gradient(to bottom, #99ff66, #66cc33);
+      padding: 10px;
+      text-align: center;
+      border-bottom: 1px solid #4d9900;
+      margin-bottom: 10px;
+    }
+    .top-print-bar input[type="button"] {
+      padding: 4px 12px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .db-badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #86efac;
+      margin-top: 4px;
+    }
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+      padding: 15px;
+    }
+    .modal-card {
+      background: #fff;
+      width: 480px;
+      max-width: 100%;
+      border-radius: 8px;
+      border: 2px solid #1e40af;
+      padding: 18px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.25);
+      font-family: Tahoma, "MS Sans Serif", sans-serif;
+    }
+    .rule-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      margin: 2px;
+      background: #f1f5f9;
+      color: #475569;
+    }
+    .rule-badge.valid {
+      background: #dcfce7;
+      color: #166534;
+      font-weight: bold;
+    }
+    @media print {
+      body {
+        background: #FFFFFF !important;
+        margin: 0 !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+      #view-slip {
+        width: 100% !important;
+      }
+      .slip-border-table {
+        width: 98% !important;
+        border: 1px solid #000 !important;
+      }
+    }
+  </style>
+</HEAD>
+
+<BODY background="images/bkgnd05.png">
+
+  <!-- ==================================================================== -->
+  <!-- VIEW 1: หน้าแรกเข้าสู่ระบบ (frmin.php) -->
+  <!-- ==================================================================== -->
+  <div id="view-login">
+    <table class="main-container" width="768" border="0" align="center" cellpadding="0" cellspacing="1" bgcolor="#FFFFFF">
+      <tr>
+        <td colspan="3"><img src="images/banner2.png" class="banner-img" border="0"></td>
+      </tr>
+      <tr>
+        <!-- Left Column: วัตถุประสงค์ -->
+        <td width="214" align="center" valign="top"><br>
+          <table width="90%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td>
+                <font color="#000000" size="3">
+                  <b>วัตถุประสงค์:</b>
+                  <br>1.เพื่อแจ้งรายละเอียดการโอนเงินดือน ค่าจ้าง ค่าตอบแทนเข้าบัญชีของข้าราชการ ลูกจ้างประจำ และพนักงานราชการของ อบจ.ศรีสะเกษ (INTRANET)
+                  <br>2.เพื่อลดการใช้กระดาษ ทดแทนการแจกกระดาษสลิปเงินเดือน
+                </font>
+              </td>
+            </tr>
+          </table>
+        </td>
+
+        <!-- Center Column: กล่อง Login -->
+        <td align="center" valign="top"><br><br>
+          <table class="login-box" width="340" border="0" align="center" cellpadding="0" cellspacing="1" bgcolor="#CCCCCC">
+            <tr>
+              <td>
+                <form id="loginForm" onsubmit="handleLogin(event)" style="margin:0;">
+                  <table width="100%" border="0" cellpadding="3" cellspacing="1" bgcolor="#FFFFFF">
+                    <tr><td colspan="3">&nbsp;</td></tr>
+                    <tr>
+                      <td colspan="3" align="center">
+                        <font color="#0000CC"><strong>:: กรุณา Login เข้าสู่ระบบ ::</strong></font>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td align="right"><font color="#009900"><b>เลขประชาชน</b><br>(Username)</font></td>
+                      <td width="6">:</td>
+                      <td>
+                        <input name="usnm" type="text" size="15" maxlength="13" id="usnm" required autocomplete="username">
+                        <br><font color="#666666" size="-1">[เลขประชาชน 13 หลัก]</font>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td align="right"><font color="#009900"><b>รหัสผ่าน</b><br>(Password)</font></td>
+                      <td>:</td>
+                      <td>
+                        <input name="pswd" type="password" size="15" id="pswd" required autocomplete="current-password">
+                        <br><font color="#666666" size="-1">[ครั้งแรกใช้ #123456#]</font>
+                      </td>
+                    </tr>
+                    <tr>
+                      <td>&nbsp;</td>
+                      <td>&nbsp;</td>
+                      <td>
+                        <input type="submit" id="btnLoginSubmit" value="ตกลง" style="padding:2px 12px; cursor:pointer;">
+                      </td>
+                    </tr>
+                    <tr>
+                      <td colspan="3" align="center">
+                        <div id="loginErrorMsg" style="color:#cc0000; font-size:13px; font-weight:bold; display:none; padding:4px;"></div>
+                        <font color="#666666" size="-1">** ลืมรหัสผ่านโปรดติดต่อ ผู้ดูแลระบบ **</font><br>
+                        <a onclick="openOtpModal()" class="forgot-link-btn">🔑 ลืมรหัสผ่าน? (รีเซ็ตรหัสผ่านด้วย OTP)</a>
+                      </td>
+                    </tr>
+                  </table>
+                </form>
+              </td>
+            </tr>
+          </table><br>
+        </td>
+
+        <!-- Right Column: โปรดอ่าน -->
+        <td width="214" align="center" valign="top"><br>
+          <table width="90%" border="0" cellpadding="0" cellspacing="0">
+            <tr>
+              <td valign="top">
+                <font color="#FF0000" size="3">
+                  <b>โปรดอ่าน:</b><br>
+                  ผู้ใดเข้าถึงโดยมิชอบซึ่งข้อมูลคอมพิวเตอร์ที่มีมาตรการป้องกันการเข้าถึงโดยเฉพาะ และมาตรการนั้นมิได้มีไว้สําหรับตน ต้องระวางโทษจําคุกไม่เกินสองปี หรือปรับไม่เกินสี่หมื่นบาท หรือทั้งจําทั้งปรับ (มาตรา 7 พระราชบัญญัติว่าด้วยการกระทําความผิดเกี่ยวกับคอมพิวเตอร์ พ.ศ.2550)
+                </font>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <tr>
+        <td colspan="3" align="center">
+          <font color="#666666" size="-1">++ ข้อมูลเริ่มต้น เดือนพฤศจิกายน 2565 ++</font>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="3" align="center"><br>
+          <font color="#666666" size="-1">
+            :: จำนวนผู้ที่ Login และเปลี่ยน Password ครั้งแรกสำเร็จ <span id="statChanged">628</span> คน จำนวนผู้มีสิทธิ์ <span id="statTotal">751</span> คน ::
+          </font>
+          <br>
+          <span class="db-badge" id="dbStatusBadge">🟢 เชื่อมต่อฐานข้อมูล 183.88.214.9 (MySQL: slip)</span>
+        </td>
+      </tr>
+      <tr><td colspan="3">&nbsp;</td></tr>
+      <tr>
+        <td colspan="3" align="center" style="padding-bottom:14px;">
+          [ <a href="http://183.88.214.9/webserv/slip/images/payslipguide5708#.pdf" target="_blank"><img src="images/DLicon.jpg" border="0" align="absmiddle"></a> คลิกอ่านคู่มือการใช้งาน ||
+          <a href="https://get.adobe.com/reader/" target="_blank"><img src="images/PDFicon.jpg" border="0" align="absmiddle"></a> คลิก Download โปรแกรม Adobe Reader ]
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- VIEW 2: หน้ารายการเดือนเงินเดือนหลังล็อกอิน (inchk.php / allmonth.php) -->
+  <!-- ==================================================================== -->
+  <div id="view-months" style="display:none;">
+    <table class="main-container" width="768" border="0" align="center" cellpadding="0" cellspacing="1" bgcolor="#FFFFFF">
+      <tr>
+        <td colspan="3"><img src="images/banner2.png" class="banner-img" border="0"></td>
+      </tr>
+      <tr>
+        <td style="padding: 10px 18px 25px 18px;">
+          <center>
+            <font size="-1" color="#CCCCCC">[ <a href="http://183.88.214.9/webserv/slip/getidchk.php" target="_blank">Admin</a> ]</font>
+          </center>
+          <table cellspacing="0" cellpadding="3" width="100%" border="0">
+            <tr>
+              <td align="center">
+                <font face="ms sans serif" size="3">
+                  <b>ยินดีต้อนรับ <br><span id="userFullName">-</span></b>
+                  ตำแหน่ง <b><span id="userPosition">-</span></b><br>
+                  หน่วยงาน <b><span id="userOffice">องค์การบริหารส่วนจังหวัดศรีสะเกษ</span></b><br>
+                </font>
+              </td>
+            </tr>
+            <tr>
+              <td align="center"><br>
+                <font face="ms sans serif" size="3" color="#FF3333">
+                  <b>&lt;&lt; <a href="javascript:void(0)" onclick="showView('view-chpass')">เปลี่ยนรหัสผ่าน</a> &gt;&gt;</b>
+                </font>
+                ||
+                <font face="ms sans serif" size="3" color="#FF3333">
+                  <b>&lt;&lt; <a href="javascript:void(0)" onclick="handleLogout()">ออกจากระบบ</a> &gt;&gt;</b>
+                </font>
+              </td>
+            </tr>
+            <tr>
+              <td align="center"><br>
+                <font face="ms sans serif" size="3" color="#990033">
+                  <b>!! คลิกชื่อเดือนเพื่อแสดงรายละเอียดใบแจ้งเงินเดือน !!</b>
+                </font>
+                <br><br>
+                <div style="width:95%; margin:0 auto; text-align:left;">
+                  <table id="tbmoney" class="display compact cell-border" style="width:100%">
+                    <thead>
+                      <tr>
+                        <th style="text-align:center; width:50px;">ที่</th>
+                        <th>เดือน</th>
+                        <th>วันที่โอนเงินเข้าบัญชี</th>
+                        <th style="text-align:center;">หมายเหตุ</th>
+                      </tr>
+                    </thead>
+                    <tbody id="monthsTableBody">
+                    </tbody>
+                  </table>
+                </div>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- VIEW 3: หน้าใบรับรองการจ่ายเงินเดือนและเงินอื่น (viewmmCivil.php) -->
+  <!-- ==================================================================== -->
+  <div id="view-slip" style="display:none;">
+    <div class="top-print-bar no-print">
+      <input type="button" onclick="window.print();" value="พิมพ์ใบแจ้งเงินเดือน (PDF) ด้วย IE และ Chrome">
+      <font face="ms sans serif" size="3" color="#FF0000"><b>||</b></font>
+      <input type="button" onclick="showView('view-months');" value="กลับหน้าแรก">
+      <font face="ms sans serif" size="3" color="#FF0000"><b>||</b></font>
+      <input type="button" onclick="handleLogout();" value="ออกจากระบบ">
+      <div style="margin-top:6px;">
+        <font face="ms sans serif" size="3" color="#FF00FF">!!</font>
+        <font color="#0000FF"><b>ขออภัยค่ะ ..ขอให้ใช้ IE หรือ Chrome เพื่อพิมพ์ (Print) ออกกระดาษได้ครบถ้วนและสวยงามค่ะ</b></font>
+        <font face="ms sans serif" size="3" color="#FF00FF">!!</font>
+      </div>
+    </div>
+
+    <div id="divprint">
+      <center>
+        <table class="slip-border-table" cellspacing="0" cellpadding="0" width="90%" style="max-width:960px;" border="1">
+          <tr>
+            <td>
+              <table cellspacing="0" cellpadding="0" width="100%" border="0" bgcolor="#FFFFFF">
+                <tr><td>&nbsp;</td></tr>
+                <tr>
+                  <td align="center">
+                    <!-- Header Logo & Title -->
+                    <table cellspacing="0" cellpadding="0" width="92%" border="0">
+                      <tr>
+                        <td width="100" align="center">
+                          <img src="images/LogoOPSgreen123px.png" border="0" width="80">
+                        </td>
+                        <td align="left" style="padding-left:10px;">
+                          <font face="TH Sarabun New, Sarabun, Tahoma" size="5">
+                            <b>องค์การบริหารส่วนจังหวัดศรีสะเกษ<br>ใบรับรองการจ่ายเงินเดือนและเงินอื่น</b>
+                          </font>
+                        </td>
+                        <td align="right">&nbsp;</td>
+                      </tr>
+                    </table>
+                    <br>
+
+                    <!-- Details Table -->
+                    <table cellspacing="0" cellpadding="2" width="92%" border="0">
+                      <tr>
+                        <td colspan="3" align="left">
+                          <font face="ms sans serif" size="3">ประจำเดือน : <span id="slipMonthYear">-</span></font>
+                        </td>
+                        <td width="2%">&nbsp;</td>
+                        <td colspan="3" align="left">
+                          <font face="ms sans serif" size="3">โอนเงินเข้าวันที่ : <span id="slipDayPay"></span></font>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colspan="3" align="left">
+                          <font face="ms sans serif" size="3">ชื่อ-สกุล : <span id="slipFullName">-</span></font>
+                        </td>
+                        <td>&nbsp;</td>
+                        <td colspan="3" align="left">
+                          <font face="ms sans serif" size="3">ชื่อธนาคาร : <span id="slipBankName">ธนาคารกรุงไทย จำกัด(มหาชน) สาขาศรีสะเกษ</span></font>
+                        </td>
+                      </tr>
+                      <tr>
+                        <td colspan="3" align="left">
+                          <font face="ms sans serif" size="3">หน่วยงาน : <span id="slipOfficeName">องค์การบริหารส่วนจังหวัดศรีสะเกษ</span></font>
+                        </td>
+                        <td>&nbsp;</td>
+                        <td colspan="3" align="left">
+                          <font face="ms sans serif" size="3">เลขที่บัญชี : <span id="slipBankNo">-</span></font>
+                        </td>
+                      </tr>
+
+                      <tr><td colspan="7" height="6"></td></tr>
+
+                      <tr>
+                        <td colspan="3" align="center">
+                          <font face="ms sans serif" size="3"><b><u>รายการรับ</u></b></font>
+                        </td>
+                        <td>&nbsp;</td>
+                        <td colspan="3" align="center">
+                          <font face="ms sans serif" size="3"><b><u>รายการหัก</u></b></font>
+                        </td>
+                      </tr>
+
+                      <!-- Row 1 -->
+                      <tr>
+                        <td width="30%"><font face="ms sans serif" size="3">1. เงินเดือน</font></td>
+                        <td width="4%">&nbsp;</td>
+                        <td width="14%" align="right"><font face="ms sans serif" size="3"><span id="m1">0.00</span> บาท</font></td>
+                        <td width="4%">&nbsp;</td>
+                        <td width="30%"><font face="ms sans serif" size="3">1. ก.ย.ส.</font></td>
+                        <td width="4%">&nbsp;</td>
+                        <td width="14%" align="right"><font face="ms sans serif" size="3"><span id="e1">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 2 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">2. เงินเดือนตกเบิก/เพิ่มพิเศษ/ค่าตอบแทน</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m2">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">2 ธ.กรุงไทยเพื่อชำระหนี้ สังกัด อบจ</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e2">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 3 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">3. เงินปจต./วิชาชีพ/วิทยฐานะ</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m3">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">3. ส. รพ.ศรีสะเกษ/ส.เลย</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e3">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 4 -->
+                      <tr valign="top">
+                        <td><font face="ms sans serif" size="3">4. เงินปจต./วิชาชีพ/วิทยฐานะ (ตกเบิก)</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m4">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">4. สหกรณ์ฯ สสจ.ศก.</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e4">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 5 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">5. เงิน พ.ต.ส.</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m5">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">5. ฌกส.สธ/ก.ท้องถิ่น/สสจ.ศก.</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e5">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 6 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">6. ตกเบิก พ.ต.ส.</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m6">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">6. สะสม กบข./กสจ.</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e6">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 7 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">7. เงินชายแดนใต้/ตกเบิกเพิ่มวุฒิ</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m7">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">7. <span id="lab7">ธ.อ.ส.</span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e7">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 8 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">8. เงิน พ.ส.ร./พ.ต.ก.</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m8">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">8. <span id="lab8">ภาษีหัก ณ ที่จ่าย/ประกันสังคม</span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e8">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 9 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">9. พ.ส.ร./พ.ต.ก.(ตกเบิก)</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m9">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">9. <span id="lab9">สหกรณ์ฯ อุบลฯ/สุรินทร์/อำนาจฯ/มุกฯ/สรรพสิทธิ์</span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e9">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 10 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">10. เงินค่าเช่าบ้าน</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m10">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">10. <span id="lab10">สหกรณ์ฯ ร้อยเอ็ด/กาฬสินธุ์/ขอนแก่น</span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e10">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 11 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">11. ค่ารักษาพยาบาล</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m11">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">11. <span id="lab11">สหกรณ์ฯ รพช/อบจ ศก./พมจ./ตราด</span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e11">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 12 -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">12. ค่าเล่าเรียนบุตร</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="m12">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">12. <span id="lab12">สหกรณ์/ตราด/สกลนคร/ยโสธร</span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e12">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 13 -->
+                      <tr>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td align="right">&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">13. <span id="lab13"></span></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="e13">0.00</span> บาท</font></td>
+                      </tr>
+                      <!-- Row 14 -->
+                      <tr>
+                        <td>&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td align="right">&nbsp;</td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">14. </font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3">0.00 บาท</font></td>
+                      </tr>
+
+                      <!-- Totals -->
+                      <tr>
+                        <td><font face="ms sans serif" size="3">รวมรับทั้งหมด</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="slipSumGet">0.00</span> บาท</font></td>
+                        <td>&nbsp;</td>
+                        <td><font face="ms sans serif" size="3">รวมหักทั้งหมด</font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><span id="slipSumPay">0.00</span> บาท</font></td>
+                      </tr>
+                      <tr><td colspan="7">&nbsp;</td></tr>
+                      <tr>
+                        <td><font face="ms sans serif" size="3"><b>รับสุทธิ</b></font></td>
+                        <td>&nbsp;</td>
+                        <td align="right"><font face="ms sans serif" size="3"><b><span id="slipSumNet">0.00</span></b> บาท</font></td>
+                        <td colspan="4">&nbsp;</td>
+                      </tr>
+                      <tr>
+                        <td colspan="3" align="right">
+                          <font face="ms sans serif" size="3">(<span id="slipSumNetThai">-</span>)</font>
+                        </td>
+                        <td colspan="4">&nbsp;</td>
+                      </tr>
+                      <tr>
+                        <td colspan="4">&nbsp;</td>
+                        <td colspan="3" align="center">
+                          <img src="images/11.png" border="0" width="100"><br>
+                          <font face="ms sans serif" size="3">
+                            ลงชื่อ ................................................<br>
+                            (นางสาวกิตติยา&nbsp;&nbsp;&nbsp;มณีสว่าง)<br>
+                            ผู้อำนวยการสำนักคลัง<br>
+                          </font>
+                          <font color="#CCCCCC" size="-1">(วันที่ออกหนังสือรับรอง <span id="slipPrintTimestamp"></span>)</font>
+                        </td>
+                      </tr>
+                    </table>
+                  </td>
+                </tr>
+                <tr><td><br></td></tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </center>
+    </div>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- VIEW 4: หน้าเปลี่ยนรหัสผ่านเมื่อล็อกอินแล้ว (chdetailnd.php) -->
+  <!-- ==================================================================== -->
+  <div id="view-chpass" style="display:none;">
+    <table class="main-container" width="768" border="0" align="center" cellpadding="0" cellspacing="1" bgcolor="#FFFFFF">
+      <tr>
+        <td colspan="3"><img src="images/banner2.png" class="banner-img" border="0"></td>
+      </tr>
+      <tr>
+        <td style="padding: 15px;">
+          <table cellspacing="0" cellpadding="0" width="100%" border="0">
+            <tr>
+              <td align="center">
+                <font face="ms sans serif" size="4">
+                  <font color="#FF0000"><b>++ คุณอยู่ในระบบเรียบร้อยแล้ว ++</b></font><br>
+                  <b><span id="chpFullName">-</span></b> ตำแหน่ง <b><span id="chpPosition">-</span></b><br>
+                  หน่วยงาน <b><span id="chpOffice">องค์การบริหารส่วนจังหวัดศรีสะเกษ</span></b>
+                </font>
+                <br><br>
+                <font color="#0000CC"><b>:: หน้าจอนี้สำหรับกำหนดรหัสผ่าน (Password) เฉพาะตัวคุณ ในการเข้าระบบ ::</b></font>
+              </td>
+            </tr>
+            <tr>
+              <td align="center"><br>
+                <table cellspacing="0" cellpadding="0" width="85%" border="0">
+                  <tr>
+                    <td>
+                      <font face="ms sans serif" size="3">
+                        <font color="#FF0000"><b><u>โปรดอ่าน</u> !!</b></font>
+                        <br>1. พิมพ์รหัสผ่านใหม่ (New) ลงในช่องด้านล่างทั้ง 2 ช่องให้ตรงกันเพื่อเป็นการยืนยัน
+                        <br>2. ต้องปกปิดรหัสผ่านเป็นความลับเฉพาะตัวของท่าน <u>ห้าม</u>เปิดเผยแก่ผู้อื่น
+                        <br>3. การเข้าระบบครั้งต่อไป <u>ต้องใช้</u> เลขบัตรประจำตัวประชาชน 13 หลัก เป็น "ชื่อผู้ใช้ (Username)" และใช้รหัสผ่านที่ท่านกำหนดใหม่ในครั้งนี้
+                      </font>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center"><br>
+                <form onsubmit="handleChangePassword(event)">
+                  <table width="460" border="1" align="center" cellpadding="8" cellspacing="0">
+                    <tr>
+                      <td align="center">
+                        <table width="94%" border="0" align="center" cellpadding="4">
+                          <tr>
+                            <td align="right"><font color="#0000CC"><strong>กำหนดรหัสผ่านใหม่ (New) :</strong></font></td>
+                            <td><input type="password" id="newPwd1" size="22" maxlength="30" required></td>
+                          </tr>
+                          <tr>
+                            <td align="right"><font color="#0000CC"><strong>ยืนยันรหัสผ่านใหม่ (New) :</strong></font></td>
+                            <td>
+                              <input type="password" id="newPwd2" size="22" maxlength="30" required>
+                              <br><font size="-1" color="#FF0000"><b>เหมือนบรรทัดบน</b></font>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td colspan="2" align="center" style="padding-top:10px;">
+                              <input type="submit" value=" ตกลง " style="padding:4px 14px; cursor:pointer;">
+                              <input type="reset" value="ยกเลิก" style="padding:4px 14px; cursor:pointer;">
+                            </td>
+                          </tr>
+                        </table>
+                      </td>
+                    </tr>
+                  </table>
+                </form>
+                <center>
+                  <font face="ms sans serif" size="3" color="#FF3333">
+                    <b>&lt;&lt; <a href="javascript:void(0)" onclick="showView('view-months')">กลับหน้าแรก</a> &gt;&gt;</b>
+                  </font>
+                  ||
+                  <font face="ms sans serif" size="3" color="#FF3333">
+                    <b>&lt;&lt; <a href="javascript:void(0)" onclick="handleLogout()">ออกจากระบบ</a> &gt;&gt;</b>
+                  </font>
+                </center>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ==================================================================== -->
+  <!-- MODAL: ค้นหาและรีเซ็ตรหัสผ่านด้วย OTP (กรณีลืมรหัสผ่าน) -->
+  <!-- ==================================================================== -->
+  <div id="otpModal" class="modal-overlay">
+    <div class="modal-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
+        <strong style="color:#1e40af; font-size:16px;">🔑 ค้นหาและรีเซ็ตรหัสผ่านสมาชิกด้วย OTP (tbmain)</strong>
+        <button onclick="closeOtpModal()" style="border:none; background:#f1f5f9; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">✕</button>
+      </div>
+
+      <!-- Step 1: กรอกเลข 13 หลัก -->
+      <div id="otpStep1">
+        <p style="font-size:13px; color:#334155; margin-top:0;">
+          กรอกเลขประจำตัวประชาชน 13 หลัก เพื่อค้นหาข้อมูลสมาชิกและรับรหัสยืนยันตัวตน (OTP)
+        </p>
+        <div style="margin-bottom:12px;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">เลขประจำตัวประชาชน 13 หลัก:</label>
+          <input type="text" id="otpIdno" maxlength="13" placeholder="เช่น 3330100466968" style="width:100%; padding:8px; font-size:15px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+        </div>
+        <button onclick="requestOtpCode()" id="btnReqOtp" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">
+          📲 ค้นหาสมาชิกและขอรหัส OTP
+        </button>
+      </div>
+
+      <!-- Step 2: ยืนยัน OTP และตั้งรหัสผ่านใหม่ 10 ตัวอักษร -->
+      <div id="otpStep2" style="display:none;">
+        <div style="background:#f0fdf4; border:1px solid #86efac; padding:10px; border-radius:6px; font-size:13px; margin-bottom:10px;">
+          <div>👤 <b>ชื่อ-สกุล:</b> <span id="otpMemName">-</span></div>
+          <div>🏥 <b>ตำแหน่ง:</b> <span id="otpMemPos">-</span></div>
+          <div>📱 <b>เบอร์มือถือที่ลงทะเบียน:</b> <span id="otpMaskedPhone">-</span></div>
+          <div style="margin-top:4px; color:#15803d;">🔢 <b>Ref Code:</b> <span id="otpRefCode">-</span> | <b>รหัส OTP ยืนยันตัวตน:</b> <span id="otpDemoCode" style="background:#dcfce7; padding:2px 6px; border-radius:4px; font-weight:bold; color:#166534;">-</span></div>
+        </div>
+
+        <div style="margin-bottom:10px;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">กรอกรหัส OTP 6 หลัก:</label>
+          <input type="text" id="otpInputCode" maxlength="6" placeholder="รหัส OTP 6 หลัก" style="width:100%; padding:7px; font-size:15px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+        </div>
+
+        <div style="margin-bottom:8px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <label style="font-size:13px; font-weight:bold;">ตั้งรหัสผ่านใหม่ (10 ตัวอักษร):</label>
+            <button type="button" onclick="autoGenPassword()" style="background:#e0e7ff; color:#1e40af; border:1px solid #93c5fd; padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">🎲 สุ่มรหัสผ่านตามเกณฑ์</button>
+          </div>
+          <input type="text" id="otpNewPassword" maxlength="10" oninput="validateOtpPasswordRule()" placeholder="เช่น Abc123456@" style="width:100%; padding:7px; font-size:15px; font-family:Consolas, monospace; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+        </div>
+
+        <div style="margin-bottom:12px;">
+          <span class="rule-badge" id="ruleDigit">ตัวเลขอารบิก 6 ตัว (0/6)</span>
+          <span class="rule-badge" id="ruleLetter">อักษรอังกฤษ 3 ตัว (0/3)</span>
+          <span class="rule-badge" id="ruleSpec">อักขระพิเศษ 1 ตัว (0/1)</span>
+          <span class="rule-badge" id="ruleLen">รวม 10 ตัว (0/10)</span>
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <button onclick="submitOtpReset()" id="btnSubmitOtpReset" style="flex:1; padding:10px; background:#16a34a; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">
+            💾 บันทึกรหัสผ่านใหม่ลง tbmain
+          </button>
+          <button onclick="resetOtpModal()" style="padding:10px 14px; background:#e2e8f0; color:#334155; border:none; border-radius:5px; cursor:pointer;">
+            ย้อนกลับ
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</BODY>
+</HTML>
