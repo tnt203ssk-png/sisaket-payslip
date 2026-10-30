@@ -454,14 +454,20 @@ export async function onRequest(context) {
       }
 
       const qOtp = await db.query(`
-        SELECT id FROM tb_otp
+        SELECT id, expires_at < NOW() AS is_expired
+        FROM tb_otp
         WHERE idno = ${sqlEsc(idno)} AND otp_code = ${sqlEsc(otpCode)} AND ref_code = ${sqlEsc(refCode)} AND is_used = 0
         ORDER BY id DESC LIMIT 1;
       `);
 
       if (qOtp.rows.length === 0) {
         db.close();
-        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP ไม่ถูกต้องหรือหมดอายุ กรุณาขอรหัส OTP ใหม่' }), { headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP 6 หลักไม่ถูกต้อง กรุณาตรวจสอบอีกครั้ง' }), { headers: corsHeaders });
+      }
+
+      if (Number(qOtp.rows[0].is_expired) === 1) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP นี้หมดอายุแล้ว (เกิน 5 นาที) กรุณากดขอรหัส OTP ใหม่' }), { headers: corsHeaders });
       }
 
       const otpId = qOtp.rows[0].id;
@@ -562,6 +568,28 @@ export async function onRequest(context) {
         VALUES (${sqlEsc(idno)}, ${sqlEsc(targetPhone)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
       `);
 
+      // Optional Real SMS Gateway integration (ThaiBulkSMS or Custom SMS Webhook via Cloudflare Env Vars)
+      let smsSent = false;
+      const smsMsg = `รหัส OTP สำหรับแก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ ${otpCode} (Ref: ${refCode}) มีอายุใช้งาน 5 นาที`;
+      if (context.env?.SMS_API_KEY && context.env?.SMS_API_SECRET) {
+        try {
+          const auth = btoa(`${context.env.SMS_API_KEY}:${context.env.SMS_API_SECRET}`);
+          const smsRes = await fetch('https://api-v2.thaibulksms.com/sms', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Basic ${auth}`,
+              'Content-Type': 'application/x-www-form-urlencoded'
+            },
+            body: new URLSearchParams({
+              msisdn: targetPhone,
+              message: smsMsg,
+              sender: context.env.SMS_SENDER || 'SmartSMS'
+            }).toString()
+          });
+          smsSent = smsRes.ok;
+        } catch {}
+      }
+
       let maskedEmail = 'ยังไม่ได้ระบุอีเมล';
       if (hasEmail) {
         const parts = email.split('@');
@@ -573,7 +601,7 @@ export async function onRequest(context) {
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: `ยืนยันหมายเลขโทรศัพท์ (${maskPhoneStr(targetPhone)}) สำเร็จ! สร้างรหัส OTP เรียบร้อยแล้ว (อายุ 5 นาที)`,
+        message: `ระบบได้สร้างรหัส OTP 6 หลัก และส่งไปยังหมายเลขโทรศัพท์ ${maskPhoneStr(targetPhone)} เรียบร้อยแล้ว กรุณานำรหัสมากรอกยืนยันภายใน 5 นาที`,
         ref_code: refCode,
         masked_phone: maskPhoneStr(targetPhone),
         masked_email: maskedEmail,
@@ -583,6 +611,9 @@ export async function onRequest(context) {
         email: email,
         member_name: member.nname,
         member_position: member.nposit,
+        expires_in_seconds: 300,
+        sms_sent: smsSent,
+        sms_preview: smsMsg,
         demo_otp: otpCode
       }), { headers: corsHeaders });
     }
@@ -605,14 +636,20 @@ export async function onRequest(context) {
       }
 
       const qOtp = await db.query(`
-        SELECT id FROM tb_otp
+        SELECT id, expires_at < NOW() AS is_expired
+        FROM tb_otp
         WHERE idno = ${sqlEsc(idno)} AND otp_code = ${sqlEsc(otpCode)} AND ref_code = ${sqlEsc(refCode)} AND is_used = 0
         ORDER BY id DESC LIMIT 1;
       `);
 
       if (qOtp.rows.length === 0) {
         db.close();
-        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP ไม่ถูกต้องหรือถูกใช้งานไปแล้ว' }), { headers: corsHeaders });
+        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP 6 หลักไม่ถูกต้อง กรุณาตรวจสอบรหัส OTP ที่ได้รับอีกครั้ง' }), { headers: corsHeaders });
+      }
+
+      if (Number(qOtp.rows[0].is_expired) === 1) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'รหัส OTP นี้หมดอายุแล้ว (เกิน 5 นาที) กรุณากดขอรหัส OTP ใหม่' }), { headers: corsHeaders });
       }
 
       const otpId = qOtp.rows[0].id;

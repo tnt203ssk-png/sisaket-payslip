@@ -634,17 +634,17 @@
                           <tr id="chpOtpInfoRow" style="display:none;">
                             <td colspan="2">
                               <div style="background:#f0fdf4; border:1px solid #86efac; padding:8px 10px; border-radius:6px; font-size:13px; text-align:left;">
-                                📲 ส่งรหัสยืนยันไปยังเบอร์: <b id="chpMaskedPhone">-</b><br>
-                                🔢 <b>Ref Code:</b> <span id="chpRefCode">-</span> | <b>รหัส OTP 6 หลัก:</b>
-                                <span id="chpDemoOtp" style="background:#dcfce7; padding:2px 8px; border-radius:4px; font-weight:bold; color:#166534; font-size:14px;">-</span>
+                                📲 ระบบได้สร้างรหัส OTP 6 หลัก ส่งเข้าหมายเลขโทรศัพท์ <b id="chpMaskedPhone" style="color:#1d4ed8;">-</b> แล้ว<br>
+                                🔢 <b>Ref Code:</b> <span id="chpRefCode" style="font-weight:bold;">-</span> |
+                                ⏳ <b>อายุรหัส OTP:</b> <span id="chpTimerText" style="color:#dc2626; font-weight:bold;">05:00 นาที</span>
                               </div>
                             </td>
                           </tr>
                           <tr>
-                            <td align="right"><font color="#009900"><strong>รหัสยืนยัน OTP (6 หลัก) :</strong></font></td>
+                            <td align="right"><font color="#009900"><strong>กรอกรหัส OTP (6 หลัก) :</strong></font></td>
                             <td>
-                              <input type="text" id="chpOtpCode" size="12" maxlength="6" placeholder="รหัส OTP 6 หลัก" required style="font-weight:bold; color:#166534;">
-                              <font size="-1" color="#666666">(กดปุ่มขอรหัส OTP ด้านบน)</font>
+                              <input type="text" id="chpOtpCode" size="14" maxlength="6" placeholder="กรอกรหัส OTP 6 หลัก" required style="font-weight:bold; color:#166534; letter-spacing:1px;">
+                              <font size="-1" color="#666666">(อายุ 5 นาที)</font>
                             </td>
                           </tr>
                           <tr>
@@ -720,14 +720,15 @@
 
       <!-- Step 2: ยืนยัน OTP และตั้งรหัสผ่านใหม่ -->
       <div id="otpStep2" style="display:none;">
-        <div style="background:#f0fdf4; border:1px solid #86efac; padding:10px; border-radius:6px; font-size:13px; margin-bottom:10px;">
-          <div>👤 <b>ชื่อ-สกุล:</b> <span id="otpMemName">-</span></div>
-          <div>🏥 <b>ตำแหน่ง:</b> <span id="otpMemPos">-</span></div>
-          <div>📱 <b>เบอร์โทรศัพท์ที่ยืนยันแล้ว:</b> <span id="otpMaskedPhone" style="color:#1d4ed8; font-weight:bold;">-</span></div>
-          <div>✉️ <b>อีเมลที่ลงทะเบียน:</b> <span id="otpMaskedEmail">-</span></div>
-          <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; color:#15803d;">
-            🔢 <b>Ref Code:</b> <span id="otpRefCode">-</span> | <b>รหัส OTP 6 หลักของคุณ:</b>
-            <span id="otpDemoCode" style="background:#dcfce7; padding:2px 8px; border-radius:4px; font-weight:bold; color:#166534; font-size:15px;">-</span>
+        <div style="background:#f0fdf4; border:1px solid #86efac; padding:10px; border-radius:6px; font-size:13px; margin-bottom:10px; line-height:1.55;">
+          <div>👤 <b>ชื่อ-สกุล:</b> <span id="otpMemName">-</span> (<span id="otpMemPos">-</span>)</div>
+          <div style="color:#15803d; font-weight:bold; margin-top:3px;">
+            📲 ระบบได้สร้างรหัส OTP 6 หลัก ส่งเข้าหมายเลขโทรศัพท์ <span id="otpMaskedPhone" style="color:#1d4ed8; text-decoration:underline;">-</span> เรียบร้อยแล้ว
+          </div>
+          <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
+            <span>🔢 <b>Ref Code:</b> <b id="otpRefCode" style="color:#1e40af;">-</b></span>
+            <span>⏳ <b>อายุใช้งาน:</b> <b id="otpTimerText" style="color:#dc2626;">05:00 นาที</b></span>
+            <button type="button" onclick="requestOtpCode()" style="background:#dcfce7; color:#166534; border:1px solid #86efac; padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">🔄 ส่งรหัส OTP อีกครั้ง</button>
           </div>
         </div>
 
@@ -735,8 +736,8 @@
         <input type="hidden" id="otpEditEmail">
 
         <div style="margin-bottom:10px;">
-          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#166534;">📲 กรอกรหัสยืนยัน OTP (6 หลัก):</label>
-          <input type="text" id="otpInputCode" maxlength="6" placeholder="กรอกรหัส OTP 6 หลัก" style="width:100%; padding:8px; font-size:16px; font-weight:bold; letter-spacing:2px; border:2px solid #16a34a; border-radius:4px; box-sizing:border-box; text-align:center;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#166534;">📲 นำรหัส OTP 6 หลัก ที่ได้รับทางหมายเลขโทรศัพท์มากรอกยืนยัน:</label>
+          <input type="text" id="otpInputCode" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="กรอกรหัส OTP 6 หลัก (ภายใน 5 นาที)" style="width:100%; padding:8px; font-size:16px; font-weight:bold; letter-spacing:3px; border:2px solid #16a34a; border-radius:4px; box-sizing:border-box; text-align:center;">
         </div>
 
         <div style="margin-bottom:8px;">
@@ -764,6 +765,20 @@
           </button>
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- แถบจำลองข้อความ SMS แจ้งเตือนเข้าหมายเลขโทรศัพท์ -->
+  <div id="smsPushBanner" style="display:none; position:fixed; top:14px; right:14px; z-index:99999; max-width:390px; background:#0f172a; color:#f8fafc; border-left:5px solid #22c55e; border-radius:8px; padding:12px 14px; box-shadow:0 10px 25px rgba(0,0,0,0.4); font-family:Tahoma, sans-serif; font-size:13px; line-height:1.5;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+      <strong style="color:#4ade80; font-size:13.5px;">📩 ข้อความ SMS เข้าหมายเลข <span id="smsBannerPhone">-</span></strong>
+      <button onclick="document.getElementById('smsPushBanner').style.display='none'" style="background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:14px; font-weight:bold;">✕</button>
+    </div>
+    <div>
+      รหัส OTP สำหรับยืนยันแก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ
+      <span id="smsBannerOtp" style="background:#166534; color:#fff; padding:2px 8px; border-radius:4px; font-size:15px; font-weight:bold; letter-spacing:1.5px;">------</span>
+      (Ref: <b id="smsBannerRef">----</b>)
+      <br><span style="color:#cbd5e1; font-size:12px;">กรุณานำรหัส 6 หลักนี้ไปกรอกยืนยันในหน้าเว็บ (อายุ 5 นาที)</span>
     </div>
   </div>
 

@@ -269,6 +269,57 @@ async function openSlipDetail(nauto) {
 }
 
 // ============================================================================
+// ตัวนับเวลาถอยหลัง 5 นาที (300 วินาที) สำหรับรหัส OTP และแถบแจ้งเตือน SMS
+// ============================================================================
+let otpTimerInterval = null;
+let chpTimerInterval = null;
+
+function formatSeconds(sec) {
+  const m = String(Math.floor(sec / 60)).padStart(2, '0');
+  const s = String(sec % 60).padStart(2, '0');
+  return `${m}:${s} นาที`;
+}
+
+function startOtpCountdown(elementId, isModal) {
+  let remaining = 300; // 5 นาที (300 วินาที)
+  if (isModal && otpTimerInterval) clearInterval(otpTimerInterval);
+  if (!isModal && chpTimerInterval) clearInterval(chpTimerInterval);
+
+  const updateLabel = () => {
+    const el = document.getElementById(elementId);
+    if (!el) return;
+    if (remaining <= 0) {
+      el.textContent = 'หมดอายุแล้ว (กรุณากดส่งรหัส OTP อีกครั้ง)';
+      el.style.color = '#dc2626';
+      if (isModal && otpTimerInterval) clearInterval(otpTimerInterval);
+      if (!isModal && chpTimerInterval) clearInterval(chpTimerInterval);
+      return;
+    }
+    el.textContent = formatSeconds(remaining);
+    remaining--;
+  };
+
+  updateLabel();
+  const id = setInterval(updateLabel, 1000);
+  if (isModal) otpTimerInterval = id;
+  else chpTimerInterval = id;
+}
+
+function showSmsNotification(maskedPhone, otpCode, refCode) {
+  const banner = document.getElementById('smsPushBanner');
+  if (!banner) return;
+  document.getElementById('smsBannerPhone').textContent = maskedPhone || '-';
+  document.getElementById('smsBannerOtp').textContent = otpCode || '------';
+  document.getElementById('smsBannerRef').textContent = refCode || '----';
+  banner.style.display = 'block';
+}
+
+function hideSmsNotification() {
+  const banner = document.getElementById('smsPushBanner');
+  if (banner) banner.style.display = 'none';
+}
+
+// ============================================================================
 // ระบบเปลี่ยนรหัสผ่านเมื่อล็อกอินแล้ว (ยืนยัน OTP ผ่านเบอร์โทรศัพท์ที่ลงทะเบียนไว้)
 // ============================================================================
 let chpCurrentRef = '';
@@ -307,9 +358,11 @@ async function requestChpOtp() {
     chpCurrentRef = data.ref_code;
     document.getElementById('chpMaskedPhone').textContent = data.masked_phone || chpPhone;
     document.getElementById('chpRefCode').textContent = data.ref_code || '-';
-    document.getElementById('chpDemoOtp').textContent = data.demo_otp || '-';
-    document.getElementById('chpOtpCode').value = data.demo_otp || '';
+    document.getElementById('chpOtpCode').value = '';
     document.getElementById('chpOtpInfoRow').style.display = '';
+    startOtpCountdown('chpTimerText', false);
+    showSmsNotification(data.masked_phone || chpPhone, data.demo_otp, data.ref_code);
+    document.getElementById('chpOtpCode').focus();
   } catch (err) {
     alert('เกิดข้อผิดพลาด: ' + err.message);
   } finally {
@@ -359,6 +412,8 @@ async function handleChangePassword(e) {
     });
     const data = await res.json();
     if (data.success) {
+      if (chpTimerInterval) clearInterval(chpTimerInterval);
+      hideSmsNotification();
       currentMember.mbphone = chpPhone;
       currentMember.email = chpEmail;
       alert(data.message || 'ยืนยันรหัส OTP และเปลี่ยนรหัสผ่านเรียบร้อยแล้ว');
@@ -401,10 +456,14 @@ function openOtpModal() {
 }
 
 function closeOtpModal() {
+  if (otpTimerInterval) clearInterval(otpTimerInterval);
+  hideSmsNotification();
   document.getElementById('otpModal').style.display = 'none';
 }
 
 function resetOtpModal() {
+  if (otpTimerInterval) clearInterval(otpTimerInterval);
+  hideSmsNotification();
   document.getElementById('otpStep1').style.display = 'block';
   document.getElementById('otpStep2').style.display = 'none';
   document.getElementById('otpInputCode').value = '';
@@ -428,7 +487,7 @@ async function requestOtpCode() {
 
   const btn = document.getElementById('btnReqOtp');
   btn.disabled = true;
-  btn.textContent = 'กำลังตรวจสอบเบอร์โทรศัพท์ที่ลงทะเบียน...';
+  btn.textContent = 'กำลังตรวจสอบเบอร์โทรศัพท์และส่งรหัส OTP...';
 
   try {
     const res = await fetch(API_ENDPOINT, {
@@ -449,9 +508,6 @@ async function requestOtpCode() {
     document.getElementById('otpMemName').textContent = data.member_name || '-';
     document.getElementById('otpMemPos').textContent = data.member_position || '-';
     document.getElementById('otpMaskedPhone').textContent = data.masked_phone || '-';
-    if (document.getElementById('otpMaskedEmail')) {
-      document.getElementById('otpMaskedEmail').textContent = data.masked_email || '-';
-    }
     if (document.getElementById('otpEditPhone')) {
       document.getElementById('otpEditPhone').value = otpVerifiedPhone;
     }
@@ -459,8 +515,8 @@ async function requestOtpCode() {
       document.getElementById('otpEditEmail').value = data.email || '';
     }
     document.getElementById('otpRefCode').textContent = data.ref_code || '-';
-    document.getElementById('otpDemoCode').textContent = data.demo_otp || '-';
-    document.getElementById('otpInputCode').value = data.demo_otp || '';
+    // เว้นช่องกรอกรหัส OTP 6 หลักให้ว่าง เพื่อให้สมาชิกนำรหัสที่ส่งเข้าหมายเลขโทรศัพท์มากรอกยืนยันเอง
+    document.getElementById('otpInputCode').value = '';
     document.getElementById('otpNewPassword').value = '';
     if (document.getElementById('otpNewPasswordConfirm')) {
       document.getElementById('otpNewPasswordConfirm').value = '';
@@ -468,6 +524,9 @@ async function requestOtpCode() {
 
     document.getElementById('otpStep1').style.display = 'none';
     document.getElementById('otpStep2').style.display = 'block';
+    startOtpCountdown('otpTimerText', true);
+    showSmsNotification(data.masked_phone || otpVerifiedPhone, data.demo_otp, data.ref_code);
+    document.getElementById('otpInputCode').focus();
   } catch (err) {
     alert('เกิดข้อผิดพลาด: ' + err.message);
   } finally {
