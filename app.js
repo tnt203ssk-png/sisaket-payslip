@@ -83,12 +83,36 @@ async function handleLogin(e) {
   }
 }
 
+function isCurrentUserAdmin() {
+  return Boolean(
+    currentMember &&
+    (currentMember.is_admin || currentMember.idno === '3330100466968' || currentMember.idno === '3330700073550')
+  );
+}
+
+function handleAdminMenuClick() {
+  if (isCurrentUserAdmin()) {
+    openOtpModal();
+  } else {
+    alert('เมนูนี้สำหรับผู้ดูแลระบบ (Admin) เท่านั้น');
+  }
+}
+
 function populateMemberHeader() {
   if (!currentMember) return;
   const officeName = currentMember.office_name || 'องค์การบริหารส่วนจังหวัดศรีสะเกษ';
   document.getElementById('userFullName').textContent = currentMember.nname || '-';
   document.getElementById('userPosition').textContent = currentMember.nposit || '-';
   document.getElementById('userOffice').textContent = officeName;
+
+  const admTop = document.getElementById('adminMenuTop');
+  if (admTop) {
+    if (isCurrentUserAdmin()) {
+      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="openOtpModal()" style="color:#1e40af; font-weight:bold;">🛡️ Admin: ค้นหา/ดูรหัส OTP สมาชิก</a> ]';
+    } else {
+      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> ]';
+    }
+  }
 
   document.getElementById('chpFullName').textContent = currentMember.nname || '-';
   document.getElementById('chpPosition').textContent = currentMember.nposit || '-';
@@ -308,6 +332,11 @@ function startOtpCountdown(elementId, isModal) {
 function showSmsNotification(maskedPhone, otpCode, refCode) {
   const banner = document.getElementById('smsPushBanner');
   if (!banner) return;
+  // แสดง Popup รหัส OTP เฉพาะเมื่อล็อกอินด้วยสิทธิ์ Admin เท่านั้น สมาชิกทั่วไปจะไม่แสดงให้เห็น
+  if (!isCurrentUserAdmin() || !otpCode) {
+    banner.style.display = 'none';
+    return;
+  }
   document.getElementById('smsBannerPhone').textContent = maskedPhone || '-';
   document.getElementById('smsBannerOtp').textContent = otpCode || '------';
   document.getElementById('smsBannerRef').textContent = refCode || '----';
@@ -346,7 +375,8 @@ async function requestChpOtp() {
         action: 'request_otp',
         idno: currentMember.idno,
         phone: chpPhone,
-        logged_in: true
+        logged_in: true,
+        is_admin: isCurrentUserAdmin()
       })
     });
     const data = await res.json();
@@ -361,11 +391,11 @@ async function requestChpOtp() {
     document.getElementById('chpOtpCode').value = '';
     document.getElementById('chpOtpInfoRow').style.display = '';
     if (document.getElementById('chpFallbackOtpBox')) {
-      if (data.sms_sent) {
-        document.getElementById('chpFallbackOtpBox').style.display = 'none';
-      } else {
-        document.getElementById('chpFallbackOtpCode').textContent = data.demo_otp || '------';
+      if (isCurrentUserAdmin() && data.demo_otp) {
+        document.getElementById('chpFallbackOtpCode').textContent = data.demo_otp;
         document.getElementById('chpFallbackOtpBox').style.display = 'block';
+      } else {
+        document.getElementById('chpFallbackOtpBox').style.display = 'none';
       }
     }
     startOtpCountdown('chpTimerText', false);
@@ -508,7 +538,7 @@ async function requestOtpCode() {
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'request_otp', idno, phone })
+      body: JSON.stringify({ action: 'request_otp', idno, phone, is_admin: isCurrentUserAdmin() })
     });
     const data = await res.json();
     if (!data.success) {
@@ -537,12 +567,12 @@ async function requestOtpCode() {
       document.getElementById('otpNewPasswordConfirm').value = '';
     }
     if (document.getElementById('otpFallbackBox')) {
-      if (data.sms_sent) {
-        document.getElementById('otpFallbackBox').style.display = 'none';
-      } else {
+      if (isCurrentUserAdmin() && data.demo_otp) {
         document.getElementById('otpFallbackPhone').textContent = data.masked_phone || otpVerifiedPhone;
-        document.getElementById('otpFallbackCode').textContent = data.demo_otp || '------';
+        document.getElementById('otpFallbackCode').textContent = data.demo_otp;
         document.getElementById('otpFallbackBox').style.display = 'block';
+      } else {
+        document.getElementById('otpFallbackBox').style.display = 'none';
       }
     }
 
