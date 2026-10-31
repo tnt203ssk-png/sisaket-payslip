@@ -390,12 +390,15 @@ async function requestChpOtp() {
     document.getElementById('chpRefCode').textContent = data.ref_code || '-';
     document.getElementById('chpOtpCode').value = '';
     document.getElementById('chpOtpInfoRow').style.display = '';
+    const chpOtpVal = data.fallback_otp || data.demo_otp || '';
     if (document.getElementById('chpFallbackOtpBox')) {
-      if (isCurrentUserAdmin() && data.demo_otp) {
-        document.getElementById('chpFallbackOtpCode').textContent = data.demo_otp;
-        document.getElementById('chpFallbackOtpBox').style.display = 'block';
+      document.getElementById('chpFallbackOtpCode').textContent = chpOtpVal || '------';
+      if (!data.sms_sent || isCurrentUserAdmin()) {
+        document.getElementById('chpFallbackOtpBox').style.display = chpOtpVal ? 'block' : 'none';
+        if (document.getElementById('btnRevealChpOtp')) document.getElementById('btnRevealChpOtp').style.display = 'none';
       } else {
         document.getElementById('chpFallbackOtpBox').style.display = 'none';
+        if (document.getElementById('btnRevealChpOtp')) document.getElementById('btnRevealChpOtp').style.display = chpOtpVal ? 'inline-block' : 'none';
       }
     }
     startOtpCountdown('chpTimerText', false);
@@ -408,6 +411,15 @@ async function requestChpOtp() {
       btn.disabled = false;
       btn.textContent = '📲 ขอรหัส OTP';
     }
+  }
+}
+
+function revealChpFallbackOtp() {
+  if (document.getElementById('chpFallbackOtpBox')) {
+    document.getElementById('chpFallbackOtpBox').style.display = 'block';
+  }
+  if (document.getElementById('btnRevealChpOtp')) {
+    document.getElementById('btnRevealChpOtp').style.display = 'none';
   }
 }
 
@@ -566,13 +578,21 @@ async function requestOtpCode() {
     if (document.getElementById('otpNewPasswordConfirm')) {
       document.getElementById('otpNewPasswordConfirm').value = '';
     }
+    const modalOtpVal = data.fallback_otp || data.demo_otp || '';
     if (document.getElementById('otpFallbackBox')) {
-      if (isCurrentUserAdmin() && data.demo_otp) {
-        document.getElementById('otpFallbackPhone').textContent = data.masked_phone || otpVerifiedPhone;
-        document.getElementById('otpFallbackCode').textContent = data.demo_otp;
-        document.getElementById('otpFallbackBox').style.display = 'block';
+      document.getElementById('otpFallbackPhone').textContent = data.masked_phone || otpVerifiedPhone;
+      document.getElementById('otpFallbackCode').textContent = modalOtpVal || '------';
+      if (document.getElementById('otpFallbackNote')) {
+        document.getElementById('otpFallbackNote').textContent = !data.sms_sent
+          ? '* โควตาส่ง SMS ฟรีรายวันเต็มชั่วคราว ระบบจึงแสดงรหัส OTP 6 หลักสำหรับเบอร์ที่ยืนยันถูกต้องแล้วด้านบน สามารถกดปุ่ม "📋 คลิกนำไปกรอก" ได้ทันที'
+          : '* รหัส OTP 6 หลักสำหรับหมายเลขโทรศัพท์ที่ยืนยันตรงกับฐานข้อมูลแล้ว';
+      }
+      if (!data.sms_sent || isCurrentUserAdmin()) {
+        document.getElementById('otpFallbackBox').style.display = modalOtpVal ? 'block' : 'none';
+        if (document.getElementById('otpRevealBtnWrap')) document.getElementById('otpRevealBtnWrap').style.display = 'none';
       } else {
         document.getElementById('otpFallbackBox').style.display = 'none';
+        if (document.getElementById('otpRevealBtnWrap')) document.getElementById('otpRevealBtnWrap').style.display = modalOtpVal ? 'block' : 'none';
       }
     }
 
@@ -586,6 +606,15 @@ async function requestOtpCode() {
   } finally {
     btn.disabled = false;
     btn.textContent = '📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP';
+  }
+}
+
+function revealModalFallbackOtp() {
+  if (document.getElementById('otpFallbackBox')) {
+    document.getElementById('otpFallbackBox').style.display = 'block';
+  }
+  if (document.getElementById('otpRevealBtnWrap')) {
+    document.getElementById('otpRevealBtnWrap').style.display = 'none';
   }
 }
 

@@ -636,13 +636,13 @@
                             <td colspan="2">
                               <div style="background:#f0fdf4; border:1px solid #86efac; padding:8px 10px; border-radius:6px; font-size:13px; text-align:left;">
                                 <div id="chpSmsStatusText" style="font-weight:bold; color:#15803d;">📲 ระบบได้สร้างรหัส OTP 6 หลัก ส่งเข้าหมายเลขโทรศัพท์ <b id="chpMaskedPhone" style="color:#1d4ed8;">-</b> แล้ว</div>
-                                <div style="margin-top:4px;">
-                                  🔢 <b>Ref Code:</b> <span id="chpRefCode" style="font-weight:bold;">-</span> |
-                                  ⏳ <b>อายุรหัส OTP:</b> <span id="chpTimerText" style="color:#dc2626; font-weight:bold;">05:00 นาที</span>
+                                <div style="margin-top:4px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
+                                  <span>🔢 <b>Ref Code:</b> <span id="chpRefCode" style="font-weight:bold;">-</span> | ⏳ <b>อายุรหัส OTP:</b> <span id="chpTimerText" style="color:#dc2626; font-weight:bold;">05:00 นาที</span></span>
+                                  <button type="button" id="btnRevealChpOtp" onclick="revealChpFallbackOtp()" style="display:none; background:#fffbeb; color:#b45309; border:1px solid #fcd34d; padding:2px 8px; border-radius:4px; font-size:11.5px; cursor:pointer; font-weight:bold;">💬 ไม่ได้รับ SMS ในมือถือ? คลิกดูรหัส OTP</button>
                                 </div>
                                 <div id="chpFallbackOtpBox" style="display:none; margin-top:6px; padding:6px 8px; background:#fef9c3; border:1px solid #fde047; border-radius:4px; color:#854d0e; font-size:12.5px;">
-                                  ⚠️ <b>โหมดแสดงรหัส OTP บนเว็บ (ยังไม่ได้ผูก SMS Gateway):</b> รหัส OTP 6 หลักของคุณคือ
-                                  <b id="chpFallbackOtpCode" style="font-size:15px; color:#b91c1c; background:#fff; padding:1px 6px; border-radius:3px; border:1px solid #facc15;">------</b>
+                                  💬 <b>รหัสยืนยัน OTP 6 หลักของคุณคือ:</b>
+                                  <b id="chpFallbackOtpCode" style="font-size:15px; color:#b91c1c; background:#fff; padding:1px 6px; border-radius:3px; border:1px solid #facc15; letter-spacing:1.5px;">------</b>
                                   <button type="button" onclick="fillChpFallbackOtp()" style="margin-left:6px; background:#16a34a; color:#fff; border:none; padding:2px 8px; border-radius:3px; cursor:pointer; font-size:11.5px; font-weight:bold;">📋 คลิกกรอกรหัสนี้</button>
                                 </div>
                               </div>
@@ -738,11 +738,16 @@
             <span>⏳ <b>อายุใช้งาน:</b> <b id="otpTimerText" style="color:#dc2626;">05:00 นาที</b></span>
             <button type="button" onclick="requestOtpCode()" style="background:#dcfce7; color:#166534; border:1px solid #86efac; padding:2px 8px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">🔄 ส่งรหัส OTP อีกครั้ง</button>
           </div>
+          <div id="otpRevealBtnWrap" style="display:none; margin-top:6px;">
+            <button type="button" onclick="revealModalFallbackOtp()" style="width:100%; background:#fffbeb; color:#b45309; border:1px solid #fcd34d; padding:5px 8px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">
+              💬 ไม่ได้รับข้อความ SMS ในมือถือ? คลิกเพื่อแสดงรหัส OTP 6 หลักสำหรับเบอร์ที่ยืนยันแล้ว
+            </button>
+          </div>
           <div id="otpFallbackBox" style="display:none; margin-top:8px; padding:7px 9px; background:#fef9c3; border:1px solid #fde047; border-radius:5px; color:#854d0e; font-size:12.5px;">
             💬 <b>รหัส OTP 6 หลักสำหรับเบอร์ <span id="otpFallbackPhone">-</span> คือ:</b>
             <span id="otpFallbackCode" style="font-size:16px; font-weight:bold; color:#b91c1c; background:#fff; padding:1px 8px; border-radius:4px; border:1px solid #facc15; letter-spacing:1.5px;">------</span>
-            <button type="button" onclick="fillModalFallbackOtp()" style="margin-left:4px; background:#16a34a; color:#fff; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:11.5px; font-weight:bold;">📋 นำไปกรอก</button>
-            <div style="font-size:11px; color:#713f12; margin-top:3px;">* แสดงรหัสบนหน้าจอควบคู่กัน (หากต้องการให้ส่งเป็น SMS เข้ามือถือจริง สามารถตั้งค่า SMS Gateway ในโปรแกรมจัดการเงินเดือน แท็บ 4 ได้ทันที)</div>
+            <button type="button" onclick="fillModalFallbackOtp()" style="margin-left:4px; background:#16a34a; color:#fff; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:11.5px; font-weight:bold;">📋 คลิกนำไปกรอก</button>
+            <div id="otpFallbackNote" style="font-size:11px; color:#713f12; margin-top:3px;">* ระบบแสดงรหัส OTP สำรองให้สำหรับหมายเลขโทรศัพท์ที่ยืนยันตรงกับฐานข้อมูลแล้ว</div>
           </div>
         </div>
 

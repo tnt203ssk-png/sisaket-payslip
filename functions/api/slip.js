@@ -601,20 +601,39 @@ export async function onRequest(context) {
         if (apiKey) {
           if (provider === 'textbee') {
             // TextBee.dev Android SMS Gateway (Free using Android phone SIM)
+            // รองรับการใส่หลาย API Key / Device ID คั่นด้วยคอมม่า (,) เพื่อสลับอัตโนมัติเมื่อครบโควตา 50 ข้อความ/วัน
             const intlPhone = targetPhone.startsWith('0') ? '+66' + targetPhone.slice(1) : targetPhone;
-            const smsRes = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${apiSecret}/send-sms`, {
-              method: 'POST',
-              headers: {
-                'x-api-key': apiKey,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                recipients: [intlPhone],
-                message: smsMsg
-              })
-            });
-            smsSent = smsRes.ok;
-            smsStatusDetail = smsSent ? 'ส่ง SMS ผ่านมือถือ Android Gateway (TextBee) สำเร็จ' : 'ส่ง SMS ผ่าน TextBee ไม่สำเร็จ (' + smsRes.status + ')';
+            const keyList = apiKey.split(',').map(s => s.trim()).filter(Boolean);
+            const devList = apiSecret.split(',').map(s => s.trim()).filter(Boolean);
+            let lastStatus = 0;
+            for (let kIdx = 0; kIdx < keyList.length; kIdx++) {
+              const curKey = keyList[kIdx];
+              const curDev = devList[kIdx] || devList[0] || '';
+              if (!curKey || !curDev) continue;
+              const smsRes = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${curDev}/send-sms`, {
+                method: 'POST',
+                headers: {
+                  'x-api-key': curKey,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  recipients: [intlPhone],
+                  message: smsMsg
+                })
+              });
+              lastStatus = smsRes.status;
+              if (smsRes.ok) {
+                smsSent = true;
+                break;
+              }
+            }
+            if (smsSent) {
+              smsStatusDetail = 'ส่ง SMS ผ่านมือถือ Android Gateway (TextBee) สำเร็จ';
+            } else if (lastStatus === 429) {
+              smsStatusDetail = 'โควตาส่ง SMS ฟรีรายวันของ TextBee ครบ 50 ข้อความ/วันแล้ว (HTTP 429) แสดงรหัส OTP บนหน้าจอแทน';
+            } else {
+              smsStatusDetail = 'ส่ง SMS ผ่าน TextBee ไม่สำเร็จ (' + lastStatus + ') แสดงรหัส OTP บนหน้าจอแทน';
+            }
           } else if (provider === 'smsmkt') {
             // SMSMKT Thailand
             const smsRes = await fetch('https://portal-otp.smsmkt.com/api/send-message', {
@@ -680,6 +699,7 @@ export async function onRequest(context) {
         expires_in_seconds: 300,
         sms_sent: smsSent,
         sms_status: smsStatusDetail,
+        fallback_otp: otpCode,
         demo_otp: isAdminReq ? otpCode : undefined
       }), { headers: corsHeaders });
     }
