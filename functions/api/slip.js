@@ -115,10 +115,11 @@ async function sendOtpEmailViaGateway(db, context, { toEmail, otpCode, refCode, 
   `;
 
   try {
-    let provider = context.env?.EMAIL_PROVIDER || '';
-    let apiKey = context.env?.EMAIL_WEBHOOK_URL || context.env?.EMAIL_API_KEY || '';
+    const DEFAULT_GAS_EMAIL_URL = 'https://script.google.com/macros/s/AKfycbz-eEjLmWMEZfIiO4CVnfScsTQYsKs34xTHJaB_3gQ_Cw_KCt0-94DHaSyWAXShhlvB/exec';
+    let provider = context.env?.EMAIL_PROVIDER || 'gas';
+    let apiKey = context.env?.EMAIL_WEBHOOK_URL || context.env?.EMAIL_API_KEY || DEFAULT_GAS_EMAIL_URL;
     let apiSecret = context.env?.EMAIL_API_SECRET || '';
-    let sender = context.env?.EMAIL_SENDER || '';
+    let sender = context.env?.EMAIL_SENDER || 'GmailOTP';
 
     const qEmCfg = await db.query("SELECT provider, api_key, api_secret, sender FROM tb_sms_config WHERE id = 2 LIMIT 1;");
     if (qEmCfg.rows.length > 0 && qEmCfg.rows[0].api_key) {
@@ -284,17 +285,34 @@ class MySqlDriver {
   }
 
   async connect() {
-    await new Promise((resolve, reject) => {
-      this.socket = net.createConnection({ host: this.host, port: this.port }, () => resolve());
-      this.socket.on('data', (chunk) => this.appendBuffer(chunk));
-      this.socket.on('error', (err) => {
-        if (this.waitReject) this.waitReject(err);
-        reject(err);
-      });
-      this.socket.on('end', () => {
-        if (this.waitReject) this.waitReject(new Error('MySQL socket closed unexpectedly'));
-      });
-    });
+    let lastErr = null;
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      try {
+        this.buffer = new Uint8Array(0);
+        this.waitResolve = null;
+        this.waitReject = null;
+        await new Promise((resolve, reject) => {
+          this.socket = net.createConnection({ host: this.host, port: this.port }, () => resolve());
+          this.socket.on('data', (chunk) => this.appendBuffer(chunk));
+          this.socket.on('error', (err) => {
+            if (this.waitReject) this.waitReject(err);
+            reject(err);
+          });
+          this.socket.on('end', () => {
+            if (this.waitReject) this.waitReject(new Error('MySQL socket closed unexpectedly'));
+          });
+        });
+        lastErr = null;
+        break;
+      } catch (connErr) {
+        lastErr = connErr;
+        try { if (this.socket) this.socket.destroy(); } catch (_) {}
+        if (attempt < 4) {
+          await new Promise((r) => setTimeout(r, 350 * attempt));
+        }
+      }
+    }
+    if (lastErr) throw lastErr;
 
     // 1. Read Initial Handshake Packet
     const initPkt = await this.readPacket();

@@ -8,6 +8,30 @@ let currentMember = null;
 let currentMonths = [];
 let dataTableInstance = null;
 
+// Helper เรียก API พร้อมระบบลองใหม่อัตโนมัติ (Auto-Retry) กรณีเซิร์ฟเวอร์ 183.88.214.9 ตอบสนองช้าชั่วขณะ
+async function apiPost(payload, maxRetries = 3) {
+  let lastData = null;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const res = await fetch(API_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!data.success && data.message && data.message.includes('ECONNREFUSED') && i < maxRetries - 1) {
+        await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+        continue;
+      }
+      return data;
+    } catch (err) {
+      if (i === maxRetries - 1) throw err;
+      await new Promise((r) => setTimeout(r, 500 * (i + 1)));
+    }
+  }
+  return lastData || { success: false, message: 'ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กรุณาลองใหม่อีกครั้ง' };
+}
+
 const THAI_MONTHS = {
   1: 'มกราคม', 2: 'กุมภาพันธ์', 3: 'มีนาคม', 4: 'เมษายน',
   5: 'พฤษภาคม', 6: 'มิถุนายน', 7: 'กรกฎาคม', 8: 'สิงหาคม',
@@ -54,12 +78,7 @@ async function handleLogin(e) {
   btn.value = 'กำลังตรวจสอบ...';
 
   try {
-    const res = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'login', idno, password })
-    });
-    const data = await res.json();
+    const data = await apiPost({ action: 'login', idno, password });
 
     if (!data.success) {
       errEl.textContent = data.message || 'เลขประจำตัวประชาชน หรือ รหัสผ่าน ไม่ถูกต้อง!';
@@ -639,20 +658,15 @@ async function requestOtpCode() {
     : 'กำลังตรวจสอบเบอร์โทรศัพท์และส่งรหัส OTP...';
 
   try {
-    const res = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'request_otp',
-        idno,
-        channel: activeChannel,
-        contact: rawContact,
-        phone: activeChannel === 'phone' ? rawContact : '',
-        email: activeChannel === 'email' ? rawContact : '',
-        is_admin: isCurrentUserAdmin()
-      })
+    const data = await apiPost({
+      action: 'request_otp',
+      idno,
+      channel: activeChannel,
+      contact: rawContact,
+      phone: activeChannel === 'phone' ? rawContact : '',
+      email: activeChannel === 'email' ? rawContact : '',
+      is_admin: isCurrentUserAdmin()
     });
-    const data = await res.json();
     if (!data.success) {
       alert(data.message || 'ไม่สามารถยืนยันข้อมูลได้');
       return;
@@ -792,20 +806,15 @@ async function submitOtpReset() {
   btn.disabled = true;
 
   try {
-    const res = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'reset_password_otp',
-        idno: otpCurrentIdno,
-        otp_code: otpCode,
-        ref_code: otpCurrentRef,
-        new_password: newPass,
-        mbphone: editPhone,
-        email: editEmail
-      })
+    const data = await apiPost({
+      action: 'reset_password_otp',
+      idno: otpCurrentIdno,
+      otp_code: otpCode,
+      ref_code: otpCurrentRef,
+      new_password: newPass,
+      mbphone: editPhone,
+      email: editEmail
     });
-    const data = await res.json();
     if (!data.success) {
       alert(data.message || 'ไม่สามารถตั้งรหัสผ่านใหม่ได้');
       return;
