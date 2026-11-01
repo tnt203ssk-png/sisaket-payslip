@@ -196,7 +196,13 @@
                       <td colspan="3" align="center">
                         <div id="loginErrorMsg" style="color:#cc0000; font-size:13px; font-weight:bold; display:none; padding:4px;"></div>
                         <font color="#666666" size="-1">** ลืมรหัสผ่าน / แก้ไขรหัสผ่านด้วยตนเอง **</font><br>
-                        <a onclick="openOtpModal('phone')" class="forgot-link-btn">📲 ยืนยันตัวตนแก้รหัสผ่าน (ผ่านเบอร์โทรศัพท์ หรือ 📧 อีเมล)</a>
+                        <div style="display:flex; gap:6px; justify-content:center; margin-top:5px; flex-wrap:wrap;">
+                          <a onclick="openOtpModal('phone')" class="forgot-link-btn" style="flex:1; min-width:135px; margin-top:0;">📲 ยืนยันด้วยเบอร์โทรศัพท์</a>
+                          <a onclick="openOtpModal('email')" class="forgot-link-btn" style="flex:1; min-width:135px; margin-top:0; background:#f0fdfa; border-color:#5eead4; color:#0f766e;">📧 ยืนยันด้วยอีเมล (Email)</a>
+                        </div>
+                        <div style="margin-top:6px;">
+                          <a href="javascript:void(0)" onclick="openEmailConfigModal()" style="font-size:11.5px; color:#0f766e; text-decoration:underline; font-weight:bold;">⚙️ ตั้งค่าระบบส่ง OTP เข้าอีเมล Gmail จริง (สำหรับผู้ดูแลระบบ)</a>
+                        </div>
                       </td>
                     </tr>
                   </table>
@@ -740,6 +746,11 @@
         <button onclick="requestOtpCode()" id="btnReqOtp" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
           📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP
         </button>
+        <div style="margin-top:10px; text-align:center; border-top:1px dashed #cbd5e1; padding-top:8px;">
+          <button type="button" onclick="openEmailConfigModal()" style="background:#f0fdfa; color:#0f766e; border:1px solid #5eead4; padding:5px 12px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">
+            ⚙️ ตั้งค่าผูกบัญชี Gmail สำหรับส่งรหัส OTP เข้าอีเมลจริง (แอดมิน)
+          </button>
+        </div>
       </div>
 
       <!-- Step 2: ยืนยัน OTP และตั้งรหัสผ่านใหม่ -->
@@ -877,6 +888,6 @@
     </div>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=20261101b"></script>
 </BODY>
 </HTML>
