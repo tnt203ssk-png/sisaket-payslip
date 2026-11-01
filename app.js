@@ -687,12 +687,17 @@ async function requestOtpCode() {
       document.getElementById('otpFallbackCode').textContent = modalOtpVal || '------';
       if (document.getElementById('otpFallbackNote')) {
         if (activeChannel === 'email') {
-          document.getElementById('otpFallbackNote').textContent = '* ยืนยันอีเมลตรงกับฐานข้อมูลสำเร็จ สามารถกดปุ่ม "📋 คลิกนำไปกรอก" เพื่อยืนยันรหัส OTP 6 หลักได้ทันที';
+          document.getElementById('otpFallbackNote').textContent = !data.sms_sent
+            ? '* ยังไม่ได้ผูกระบบส่งอีเมล (Email Gateway) เข้ากับ Gmail จึงแสดงรหัส OTP ด้านบน (ผู้ดูแลระบบสามารถกดปุ่มด้านล่างเพื่อผูก Gmail ส่งเข้ากล่องจดหมายจริงได้ฟรี)'
+            : '* ส่งรหัส OTP เข้ากล่องจดหมายอีเมลเรียบร้อยแล้ว';
         } else {
           document.getElementById('otpFallbackNote').textContent = !data.sms_sent
             ? '* โควตาส่ง SMS ฟรีรายวันเต็มชั่วคราว ระบบจึงแสดงรหัส OTP 6 หลักสำหรับเบอร์ที่ยืนยันถูกต้องแล้วด้านบน สามารถกดปุ่ม "📋 คลิกนำไปกรอก" ได้ทันที'
             : '* รหัส OTP 6 หลักสำหรับหมายเลขโทรศัพท์ที่ยืนยันตรงกับฐานข้อมูลแล้ว';
         }
+      }
+      if (document.getElementById('emailSetupBtnWrap')) {
+        document.getElementById('emailSetupBtnWrap').style.display = (activeChannel === 'email' && !data.sms_sent) ? 'block' : 'none';
       }
       if (!data.sms_sent || isCurrentUserAdmin()) {
         document.getElementById('otpFallbackBox').style.display = modalOtpVal ? 'block' : 'none';
@@ -814,6 +819,126 @@ async function submitOtpReset() {
     alert('เกิดข้อผิดพลาด: ' + err.message);
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ============================================================================
+// ตั้งค่าระบบส่งรหัส OTP เข้าอีเมลจริง (Gmail / Google Apps Script / Brevo)
+// ============================================================================
+async function openEmailConfigModal() {
+  const modal = document.getElementById('emailConfigModal');
+  if (!modal) return;
+  modal.style.display = 'flex';
+  try {
+    const res = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'get_email_config' })
+    });
+    const data = await res.json();
+    if (data && data.success) {
+      document.getElementById('emCfgProvider').value = data.provider || 'gas';
+      document.getElementById('emCfgApiKey').value = data.api_key || '';
+      document.getElementById('emCfgApiSecret').value = data.api_secret || '';
+      onEmCfgProviderChange();
+    }
+  } catch (e) {}
+}
+
+function closeEmailConfigModal() {
+  const modal = document.getElementById('emailConfigModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function onEmCfgProviderChange() {
+  const p = document.getElementById('emCfgProvider').value;
+  const gasHelp = document.getElementById('emCfgGasHelp');
+  const keyLabel = document.getElementById('emCfgKeyLabel');
+  const keyInput = document.getElementById('emCfgApiKey');
+  const secWrap = document.getElementById('emCfgSecretWrap');
+  const secLabel = document.getElementById('emCfgSecretLabel');
+  const secInput = document.getElementById('emCfgApiSecret');
+
+  if (p === 'gas') {
+    if (gasHelp) gasHelp.style.display = 'block';
+    if (keyLabel) keyLabel.textContent = 'Web App URL (จาก Google Apps Script):';
+    if (keyInput) keyInput.placeholder = 'เช่น https://script.google.com/macros/s/AKfycb.../exec';
+    if (secWrap) secWrap.style.display = 'none';
+  } else if (p === 'gmail') {
+    if (gasHelp) gasHelp.style.display = 'none';
+    if (keyLabel) keyLabel.textContent = 'อีเมล Gmail ผู้ส่ง (เช่น tnt203ssk@gmail.com):';
+    if (keyInput) keyInput.placeholder = 'เช่น tnt203ssk@gmail.com';
+    if (secWrap) secWrap.style.display = 'block';
+    if (secLabel) secLabel.textContent = 'รหัสผ่านแอป Gmail 16 หลัก (App Password):';
+    if (secInput) secInput.placeholder = 'กรอก App Password 16 หลักของบัญชี Gmail';
+  } else {
+    if (gasHelp) gasHelp.style.display = 'none';
+    if (keyLabel) keyLabel.textContent = 'Brevo API Key (xkeysib-...):';
+    if (keyInput) keyInput.placeholder = 'กรอก xkeysib-... จาก Brevo';
+    if (secWrap) secWrap.style.display = 'block';
+    if (secLabel) secLabel.textContent = 'อีเมลผู้ส่งที่ยืนยันใน Brevo (Sender Email):';
+    if (secInput) secInput.placeholder = 'เช่น tnt203ssk@gmail.com';
+  }
+}
+
+function copyGasEmailCode() {
+  const gasCode = `function doPost(e) {
+  var data = JSON.parse(e.postData.contents);
+  MailApp.sendEmail({
+    to: data.to,
+    subject: data.subject,
+    htmlBody: data.htmlBody || data.message,
+    name: "ระบบสลิปเงินเดือน อบจ.ศรีสะเกษ"
+  });
+  return ContentService.createTextOutput(JSON.stringify({ status: "ok" })).setMimeType(ContentService.MimeType.JSON);
+}`;
+  navigator.clipboard.writeText(gasCode).then(() => {
+    alert('✅ คัดลอกโค้ด Google Apps Script เรียบร้อยแล้ว!\n\nขั้นตอนถัดไป:\n1. กดปุ่ม "🚀 เปิดหน้า Google Apps Script"\n2. กด "โครงการใหม่ (New Project)" แล้ววางโค้ดนี้ทับทั้งหมด\n3. กดปุ่ม "ทำให้ใช้งานได้ (Deploy)" -> "การทำให้ใช้งานได้รายการใหม่"\n4. เลือกประเภท "เว็บแอป (Web app)" และตั้งค่าผู้มีสิทธิ์เข้าถึงเป็น "ทุกคน (Anyone)"\n5. คัดลอก Web App URL มาวางในช่องด้านล่างได้เลยครับ');
+  });
+}
+
+async function saveEmailGatewayConfig() {
+  const provider = document.getElementById('emCfgProvider').value;
+  const apiKey = document.getElementById('emCfgApiKey').value.trim();
+  const apiSecret = document.getElementById('emCfgApiSecret').value.trim();
+  const testEmail = document.getElementById('emCfgTestEmail').value.trim();
+
+  if (!apiKey) {
+    alert('กรุณากรอกข้อมูล Web App URL หรือ อีเมล Gmail / API Key ก่อนกดบันทึก');
+    return;
+  }
+
+  const btn = document.getElementById('btnSaveEmCfg');
+  btn.disabled = true;
+  btn.textContent = 'กำลังบันทึกและทดสอบส่งอีเมล...';
+
+  try {
+    const res = await fetch(API_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save_email_config',
+        provider,
+        api_key: apiKey,
+        api_secret: apiSecret,
+        sender: 'GmailOTP',
+        test_email: testEmail
+      })
+    });
+    const data = await res.json();
+    if (data.success) {
+      alert('✅ ' + data.message);
+      if (data.test_sent !== false) {
+        closeEmailConfigModal();
+      }
+    } else {
+      alert(data.message || 'ไม่สามารถบันทึกตั้งค่าได้');
+    }
+  } catch (err) {
+    alert('เกิดข้อผิดพลาด: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 บันทึกตั้งค่าและส่งอีเมล OTP ทดสอบ';
   }
 }
 

@@ -256,7 +256,7 @@
       <tr>
         <td style="padding: 10px 18px 25px 18px;">
           <center>
-            <font size="-1" color="#CCCCCC" id="adminMenuTop">[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> ]</font>
+            <font size="-1" color="#CCCCCC" id="adminMenuTop">[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()">ตั้งค่าส่งอีเมล OTP</a> ]</font>
           </center>
           <table cellspacing="0" cellpadding="3" width="100%" border="0">
             <tr>
@@ -764,6 +764,11 @@
             <span id="otpFallbackCode" style="font-size:16px; font-weight:bold; color:#b91c1c; background:#fff; padding:1px 8px; border-radius:4px; border:1px solid #facc15; letter-spacing:1.5px;">------</span>
             <button type="button" onclick="fillModalFallbackOtp()" style="margin-left:4px; background:#16a34a; color:#fff; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:11.5px; font-weight:bold;">📋 คลิกนำไปกรอก</button>
             <div id="otpFallbackNote" style="font-size:11px; color:#713f12; margin-top:3px;">* ระบบแสดงรหัส OTP สำหรับข้อมูลที่ยืนยันตรงกับฐานข้อมูลแล้ว</div>
+            <div id="emailSetupBtnWrap" style="display:none; margin-top:5px;">
+              <button type="button" onclick="openEmailConfigModal()" style="background:#0d9488; color:#fff; border:none; padding:4px 10px; border-radius:4px; font-size:11.5px; cursor:pointer; font-weight:bold;">
+                ⚙️ คลิกตั้งค่าผูก Gmail เพื่อส่งรหัส OTP เข้ากล่องจดหมายอีเมลจริง (ฟรี)
+              </button>
+            </div>
           </div>
         </div>
 
@@ -799,6 +804,61 @@
             ย้อนกลับ
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: ตั้งค่าระบบส่งรหัส OTP เข้าอีเมลจริง (Email Gateway) -->
+  <div id="emailConfigModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:540px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:10px;">
+        <strong style="color:#0f766e; font-size:15px;">📧 ตั้งค่าระบบส่งรหัส OTP เข้าอีเมลจริง (Gmail / Email Gateway)</strong>
+        <button onclick="closeEmailConfigModal()" style="border:none; background:#f1f5f9; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">✕</button>
+      </div>
+
+      <div style="font-size:12.5px; color:#334155; line-height:1.55; margin-bottom:10px;">
+        เลือกช่องทางสำหรับส่งรหัส OTP เข้ากล่องจดหมายอีเมลของสมาชิกโดยอัตโนมัติ (ฟรี 100%):
+      </div>
+
+      <div style="margin-bottom:10px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">รูปแบบการส่งอีเมล (Email Provider):</label>
+        <select id="emCfgProvider" onchange="onEmCfgProviderChange()" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px;">
+          <option value="gas">1. Google Apps Script (แนะนำ - ใช้ Gmail ที่ล็อกอินอยู่ส่งฟรี 100-500 ฉบับ/วัน ไม่ต้องใช้รหัสผ่าน)</option>
+          <option value="gmail">2. Gmail SMTP โดยตรง (ใช้อีเมล Gmail + รหัสผ่านแอป App Password 16 หลัก)</option>
+          <option value="brevo">3. Brevo Email API (ส่งฟรี 300 ฉบับ/วัน ด้วย API Key)</option>
+        </select>
+      </div>
+
+      <!-- คำแนะนำสำหรับ Google Apps Script -->
+      <div id="emCfgGasHelp" style="background:#f0fdfa; border:1px solid #99f6e4; padding:10px; border-radius:6px; font-size:12px; color:#134e4a; margin-bottom:10px; line-height:1.6;">
+        <b>⚡ วิธีผูก Gmail ส่งอีเมล OTP ฟรีใน 3 ขั้นตอน (ทำครั้งเดียวใช้งานได้ตลอดไป):</b><br>
+        1. กดปุ่ม <button type="button" onclick="copyGasEmailCode()" style="background:#0d9488; color:#fff; border:none; padding:2px 8px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:11.5px;">📋 คัดลอกโค้ดส่งอีเมล</button> ด้านนี้<br>
+        2. กดปุ่ม <a href="https://script.google.com/home/start" target="_blank" style="background:#2563eb; color:#fff; padding:2px 8px; border-radius:4px; text-decoration:none; font-weight:bold; font-size:11.5px;">🚀 เปิดหน้า Google Apps Script</a> &rarr; กด <b>"โครงการใหม่ (New Project)"</b> &rarr; ลบโค้ดเดิมแล้ววางโค้ดที่คัดลอกลงไป<br>
+        3. กดปุ่มสีน้ำเงินมุมขวาบน <b>"ทำให้ใช้งานได้ (Deploy)" &rarr; "การทำให้ใช้งานได้รายการใหม่ (New deployment)"</b> &rarr; เลือกประเภท <b>"เว็บแอป (Web app)"</b> &rarr; ช่องผู้มีสิทธิ์เข้าถึงเลือก <b>"ทุกคน (Anyone)"</b> &rarr; กดDeploy แล้วคัดลอก <b>Web App URL (`https://script.google.com/macros/s/.../exec`)</b> มาวางในช่องด้านล่าง:
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label id="emCfgKeyLabel" style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#0f766e;">Web App URL (จาก Google Apps Script):</label>
+        <input type="text" id="emCfgApiKey" placeholder="เช่น https://script.google.com/macros/s/AKfycb.../exec" style="width:100%; padding:8px; font-size:13.5px; border:1px solid #0d9488; border-radius:4px; box-sizing:border-box;">
+      </div>
+
+      <div id="emCfgSecretWrap" style="display:none; margin-bottom:8px;">
+        <label id="emCfgSecretLabel" style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">รหัสผ่านแอป Gmail 16 หลัก (App Password):</label>
+        <input type="password" id="emCfgApiSecret" placeholder="กรอก App Password 16 หลักของ Gmail" style="width:100%; padding:8px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">📧 อีเมลสำหรับทดสอบรับรหัส OTP ทันที (ไม่บังคับ):</label>
+        <input type="email" id="emCfgTestEmail" value="tnt203ssk@gmail.com" placeholder="เช่น tnt203ssk@gmail.com" style="width:100%; padding:8px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+      </div>
+
+      <div style="display:flex; gap:8px;">
+        <button type="button" id="btnSaveEmCfg" onclick="saveEmailGatewayConfig()" style="flex:1; padding:10px; background:#0d9488; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
+          💾 บันทึกตั้งค่าและส่งอีเมล OTP ทดสอบ
+        </button>
+        <button type="button" onclick="closeEmailConfigModal()" style="padding:10px 14px; background:#e2e8f0; color:#334155; border:none; border-radius:5px; cursor:pointer;">
+          ปิด
+        </button>
       </div>
     </div>
   </div>

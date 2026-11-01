@@ -1,4 +1,201 @@
 import net from 'node:net';
+import tls from 'node:tls';
+
+// ============================================================================
+// Pure JavaScript Gmail Implicit TLS (Port 465) SMTP Client for Cloudflare
+// ============================================================================
+async function sendGmailSmtp({ gmailUser, appPassword, toEmail, subject, htmlBody }) {
+  return new Promise((resolve) => {
+    let buffer = '';
+    let step = 0;
+    let finished = false;
+    let sock = null;
+    const done = (ok, msg) => {
+      if (finished) return;
+      finished = true;
+      try { if (sock) sock.destroy(); } catch (_) {}
+      resolve({ ok, msg });
+    };
+
+    const timer = setTimeout(() => done(false, 'SMTP Timeout'), 9000);
+    sock = tls.connect({ host: 'smtp.gmail.com', port: 465, servername: 'smtp.gmail.com' });
+
+    const sendLine = (line) => {
+      sock.write(line + '\r\n');
+    };
+
+    const utf8ToB64 = (str) => {
+      const bytes = new TextEncoder().encode(str);
+      let bin = '';
+      for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+      return btoa(bin);
+    };
+
+    sock.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      const lines = buffer.split('\r\n');
+      buffer = lines.pop() || '';
+      for (const line of lines) {
+        if (line.length < 4 || line[3] === '-') continue;
+        const code = parseInt(line.slice(0, 3), 10);
+        if (step === 0 && code === 220) {
+          step = 1;
+          sendLine('EHLO sisaket-payslip.pages.dev');
+        } else if (step === 1 && code === 250) {
+          step = 2;
+          sendLine('AUTH LOGIN');
+        } else if (step === 2 && code === 334) {
+          step = 3;
+          sendLine(utf8ToB64(gmailUser.trim()));
+        } else if (step === 3 && code === 334) {
+          step = 4;
+          sendLine(utf8ToB64(appPassword.replace(/\s+/g, '')));
+        } else if (step === 4 && code === 235) {
+          step = 5;
+          sendLine(`MAIL FROM:<${gmailUser.trim()}>`);
+        } else if (step === 5 && code === 250) {
+          step = 6;
+          sendLine(`RCPT TO:<${toEmail.trim()}>`);
+        } else if (step === 6 && code === 250) {
+          step = 7;
+          sendLine('DATA');
+        } else if (step === 7 && code === 354) {
+          step = 8;
+          const subjB64 = utf8ToB64(subject);
+          const bodyB64 = utf8ToB64(htmlBody);
+          const mime = [
+            `From: =?UTF-8?B?${utf8ToB64('ระบบสลิปเงินเดือน อบจ.ศรีสะเกษ')}?= <${gmailUser.trim()}>`,
+            `To: <${toEmail.trim()}>`,
+            `Subject: =?UTF-8?B?${subjB64}?=`,
+            'MIME-Version: 1.0',
+            'Content-Type: text/html; charset=UTF-8',
+            'Content-Transfer-Encoding: base64',
+            '',
+            bodyB64,
+            '.'
+          ].join('\r\n');
+          sendLine(mime);
+        } else if (step === 8 && code === 250) {
+          step = 9;
+          clearTimeout(timer);
+          sendLine('QUIT');
+          done(true, 'ส่งอีเมลผ่าน Gmail SMTP สำเร็จ');
+        } else if (code >= 400) {
+          clearTimeout(timer);
+          done(false, 'SMTP Error: ' + line);
+        }
+      }
+    });
+
+    sock.on('error', (err) => {
+      clearTimeout(timer);
+      done(false, 'TLS Error: ' + (err?.message || String(err)));
+    });
+  });
+}
+
+async function sendOtpEmailViaGateway(db, context, { toEmail, otpCode, refCode, memberName }) {
+  const subject = `รหัส OTP (${otpCode}) ยืนยันการแก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ [Ref: ${refCode}]`;
+  const htmlBody = `
+    <div style="font-family: Tahoma, Arial, sans-serif; max-width: 520px; margin: 0 auto; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden;">
+      <div style="background: #1e40af; color: #ffffff; padding: 14px 18px; font-size: 16px; font-weight: bold;">
+        🔐 รหัสยืนยันตัวตน (OTP) ระบบสลิปเงินเดือนออนไลน์ อบจ.ศรีสะเกษ
+      </div>
+      <div style="padding: 18px; background: #ffffff; color: #1e293b; font-size: 14px; line-height: 1.6;">
+        <p style="margin-top:0;">เรียน <b>${memberName || 'สมาชิกสลิปเงินเดือนออนไลน์'}</b>,</p>
+        <p>ท่านได้ทำการขอรหัส OTP เพื่อยืนยันตัวตนสำหรับการตั้งรหัสผ่านใหม่ในระบบสลิปเงินเดือนออนไลน์ องค์การบริหารส่วนจังหวัดศรีสะเกษ:</p>
+        <div style="background: #f0fdf4; border: 2px dashed #16a34a; border-radius: 8px; padding: 14px; text-align: center; margin: 16px 0;">
+          <div style="font-size: 13px; color: #166534;">รหัสยืนยัน OTP 6 หลักของท่านคือ</div>
+          <div style="font-size: 30px; font-weight: bold; color: #b91c1c; letter-spacing: 6px; margin: 6px 0;">${otpCode}</div>
+          <div style="font-size: 13px; color: #475569;">รหัสอ้างอิง (Ref Code): <b>${refCode}</b> | อายุใช้งาน: <b>5 นาที</b></div>
+        </div>
+        <p style="font-size: 12.5px; color: #64748b; margin-bottom:0;">* กรุณานำรหัส 6 หลักนี้ไปกรอกในหน้าเว็บไซต์เพื่อกำหนดรหัสผ่านใหม่ของท่าน</p>
+      </div>
+    </div>
+  `;
+
+  try {
+    let provider = context.env?.EMAIL_PROVIDER || '';
+    let apiKey = context.env?.EMAIL_WEBHOOK_URL || context.env?.EMAIL_API_KEY || '';
+    let apiSecret = context.env?.EMAIL_API_SECRET || '';
+    let sender = context.env?.EMAIL_SENDER || '';
+
+    const qEmCfg = await db.query("SELECT provider, api_key, api_secret, sender FROM tb_sms_config WHERE id = 2 LIMIT 1;");
+    if (qEmCfg.rows.length > 0 && qEmCfg.rows[0].api_key) {
+      provider = String(qEmCfg.rows[0].provider || 'gas').trim().toLowerCase();
+      apiKey = String(qEmCfg.rows[0].api_key || '').trim();
+      apiSecret = String(qEmCfg.rows[0].api_secret || '').trim();
+      sender = String(qEmCfg.rows[0].sender || '').trim();
+    }
+
+    if (!apiKey) {
+      return { sent: false, detail: 'ยังไม่ได้ตั้งค่าระบบส่งอีเมล (Email Gateway)' };
+    }
+
+    if (provider === 'gas' || apiKey.startsWith('https://script.google.com/')) {
+      const emRes = await fetch(apiKey, {
+        method: 'POST',
+        redirect: 'follow',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({
+          to: toEmail,
+          subject: subject,
+          htmlBody: htmlBody,
+          message: `รหัส OTP แก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ ${otpCode} (Ref: ${refCode}) อายุ 5 นาที`,
+          otp_code: otpCode,
+          ref_code: refCode,
+          member_name: memberName
+        })
+      });
+      if (emRes.ok) {
+        return { sent: true, detail: 'ส่งอีเมลผ่าน Google Apps Script (Gmail) สำเร็จ' };
+      }
+      return { sent: false, detail: 'ส่งอีเมลผ่าน Google Apps Script ไม่สำเร็จ (HTTP ' + emRes.status + ')' };
+    }
+
+    if (provider === 'gmail' || (apiKey.includes('@') && apiSecret)) {
+      const res = await sendGmailSmtp({
+        gmailUser: apiKey,
+        appPassword: apiSecret,
+        toEmail,
+        subject,
+        htmlBody
+      });
+      return { sent: res.ok, detail: res.msg };
+    }
+
+    if (provider === 'brevo') {
+      const emRes = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'api-key': apiKey,
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          sender: { name: 'ระบบสลิปเงินเดือน อบจ.ศรีสะเกษ', email: sender || apiSecret || 'noreply@sisaket-payslip.pages.dev' },
+          to: [{ email: toEmail, name: memberName || toEmail }],
+          subject: subject,
+          htmlContent: htmlBody
+        })
+      });
+      if (emRes.ok) {
+        return { sent: true, detail: 'ส่งอีเมลผ่าน Brevo API สำเร็จ' };
+      }
+      return { sent: false, detail: 'ส่งอีเมลผ่าน Brevo ไม่สำเร็จ (HTTP ' + emRes.status + ')' };
+    }
+
+    // Generic Webhook fallback
+    const emRes = await fetch(apiKey, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: toEmail, subject, htmlBody, otp_code: otpCode, ref_code: refCode })
+    });
+    return { sent: emRes.ok, detail: emRes.ok ? 'ส่งอีเมลสำเร็จ' : 'ส่งอีเมลไม่สำเร็จ (' + emRes.status + ')' };
+  } catch (err) {
+    return { sent: false, detail: 'เกิดข้อผิดพลาดในการส่งอีเมล: ' + (err?.message || String(err)) };
+  }
+}
 
 // ============================================================================
 // Pure JavaScript MySQL Wire Protocol Client for Cloudflare Pages Functions
@@ -642,30 +839,15 @@ export async function onRequest(context) {
       const smsMsg = `รหัส OTP แก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ ${otpCode} (Ref: ${refCode}) อายุ 5 นาที`;
 
       if (verifyChannel === 'email') {
-        // ยืนยันตัวตนผ่านอีเมล (Email Verification)
-        try {
-          const emailWebhook = context.env?.EMAIL_WEBHOOK_URL || '';
-          if (emailWebhook) {
-            const emRes = await fetch(emailWebhook, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                to: targetEmail,
-                subject: `รหัส OTP (${otpCode}) ยืนยันการแก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ [Ref: ${refCode}]`,
-                message: smsMsg,
-                otp_code: otpCode,
-                ref_code: refCode,
-                member_name: member.nname
-              })
-            });
-            smsSent = emRes.ok;
-          }
-        } catch (emErr) {
-          smsSent = false;
-        }
-        smsStatusDetail = smsSent
-          ? `ส่งรหัส OTP ไปยังอีเมล ${maskEmailStr(targetEmail)} สำเร็จ`
-          : `ยืนยันอีเมล ${maskEmailStr(targetEmail)} ตรงกับฐานข้อมูลสำเร็จ (แสดงรหัส OTP 6 หลักสำหรับอีเมลที่ยืนยันแล้วด้านล่าง)`;
+        // ยืนยันตัวตนผ่านอีเมล (Email Verification) - ส่งอีเมล OTP จริงผ่าน Google Apps Script / Gmail SMTP / Brevo
+        const emResult = await sendOtpEmailViaGateway(db, context, {
+          toEmail: targetEmail,
+          otpCode,
+          refCode,
+          memberName: member.nname
+        });
+        smsSent = emResult.sent;
+        smsStatusDetail = emResult.detail;
       } else {
         smsStatusDetail = 'ยังไม่ได้ตั้งค่า SMS Gateway API Key (แสดงรหัส OTP บนหน้าจอแทน)';
         try {
@@ -838,8 +1020,63 @@ export async function onRequest(context) {
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: 'ยืนยันรหัส OTP ผ่านหมายเลขโทรศัพท์และเปลี่ยนรหัสผ่านใหม่สำเร็จเรียบร้อยแล้ว!',
+        message: 'ยืนยันรหัส OTP และเปลี่ยนรหัสผ่านใหม่สำเร็จเรียบร้อยแล้ว!',
         new_password: newPass
+      }), { headers: corsHeaders });
+    }
+
+    // 7. Get / Save Email Gateway Configuration (stored in tb_sms_config id = 2)
+    if (action === 'get_email_config') {
+      const qEm = await db.query("SELECT provider, api_key, api_secret, sender FROM tb_sms_config WHERE id = 2 LIMIT 1;");
+      db.close();
+      const row = qEm.rows.length > 0 ? qEm.rows[0] : { provider: 'gas', api_key: '', api_secret: '', sender: '' };
+      return new Response(JSON.stringify({
+        success: true,
+        provider: row.provider || 'gas',
+        api_key: row.api_key || '',
+        api_secret: row.api_secret || '',
+        sender: row.sender || ''
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'save_email_config') {
+      const provider = String(body.provider || 'gas').trim().toLowerCase();
+      const apiKey = String(body.api_key || '').trim();
+      const apiSecret = String(body.api_secret || '').trim();
+      const sender = String(body.sender || 'GmailOTP').trim();
+      const testEmail = String(body.test_email || '').trim();
+
+      await db.query(`
+        INSERT INTO tb_sms_config (id, provider, api_key, api_secret, sender, updated_at)
+        VALUES (2, ${sqlEsc(provider)}, ${sqlEsc(apiKey)}, ${sqlEsc(apiSecret)}, ${sqlEsc(sender)}, NOW())
+        ON DUPLICATE KEY UPDATE
+          provider = VALUES(provider),
+          api_key = VALUES(api_key),
+          api_secret = VALUES(api_secret),
+          sender = VALUES(sender),
+          updated_at = NOW();
+      `);
+
+      let testRes = null;
+      if (testEmail && testEmail.includes('@') && apiKey) {
+        testRes = await sendOtpEmailViaGateway(db, context, {
+          toEmail: testEmail,
+          otpCode: '123456',
+          refCode: 'TEST',
+          memberName: 'ทดสอบระบบส่งอีเมล OTP'
+        });
+      }
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        message: testRes
+          ? (testRes.sent
+              ? `บันทึกตั้งค่าสำเร็จ และส่งอีเมลทดสอบไปยัง ${testEmail} เรียบร้อยแล้ว!`
+              : `บันทึกตั้งค่าแล้ว แต่การส่งอีเมลทดสอบไม่สำเร็จ: ${testRes.detail}`)
+          : 'บันทึกการตั้งค่าระบบส่งอีเมล (Email Gateway) ลงฐานข้อมูลเรียบร้อยแล้ว!',
+        test_sent: testRes ? testRes.sent : undefined,
+        test_detail: testRes ? testRes.detail : undefined
       }), { headers: corsHeaders });
     }
 
