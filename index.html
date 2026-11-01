@@ -196,7 +196,7 @@
                       <td colspan="3" align="center">
                         <div id="loginErrorMsg" style="color:#cc0000; font-size:13px; font-weight:bold; display:none; padding:4px;"></div>
                         <font color="#666666" size="-1">** ลืมรหัสผ่าน / แก้ไขรหัสผ่านด้วยตนเอง **</font><br>
-                        <a onclick="openOtpModal()" class="forgot-link-btn">📲 ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้รหัสผ่าน</a>
+                        <a onclick="openOtpModal('phone')" class="forgot-link-btn">📲 ยืนยันตัวตนแก้รหัสผ่าน (ผ่านเบอร์โทรศัพท์ หรือ 📧 อีเมล)</a>
                       </td>
                     </tr>
                   </table>
@@ -271,7 +271,7 @@
             <tr>
               <td align="center"><br>
                 <font face="ms sans serif" size="3" color="#FF3333">
-                  <b>&lt;&lt; <a href="javascript:void(0)" onclick="showView('view-chpass')">เปลี่ยนรหัสผ่าน (ยืนยัน OTP เบอร์โทรศัพท์)</a> &gt;&gt;</b>
+                  <b>&lt;&lt; <a href="javascript:void(0)" onclick="showView('view-chpass')">เปลี่ยนรหัสผ่าน (ยืนยัน OTP เบอร์โทรศัพท์ / อีเมล)</a> &gt;&gt;</b>
                 </font>
                 ||
                 <font face="ms sans serif" size="3" color="#FF3333">
@@ -608,8 +608,8 @@
                   <tr>
                     <td>
                       <font face="ms sans serif" size="3">
-                        <font color="#FF0000"><b><u>โปรดอ่านขั้นตอนการเปลี่ยนรหัสผ่านด้วย OTP</u> !!</b></font>
-                        <br>1. ตรวจสอบ<b>หมายเลขโทรศัพท์ที่ลงทะเบียนไว้</b> แล้วคลิกปุ่ม <b>"📲 ขอรหัส OTP ยืนยันเบอร์โทรศัพท์"</b>
+                        <font color="#FF0000"><b><u>โปรดอ่านขั้นตอนการเปลี่ยนรหัสผ่านด้วย OTP (เลือกยืนยันผ่านเบอร์โทรศัพท์ หรือ อีเมล)</u> !!</b></font>
+                        <br>1. เลือกตรวจสอบ <b>หมายเลขโทรศัพท์</b> หรือ <b>อีเมล (Email)</b> ที่ลงทะเบียนไว้ แล้วคลิกปุ่ม <b>"📲 ขอรหัส OTP (เบอร์โทร)"</b> หรือ <b>"📧 ขอรหัส OTP (อีเมล)"</b>
                         <br>2. กรอกรหัส <b>OTP 6 หลัก</b> ที่ได้รับ และพิมพ์รหัสผ่านใหม่ (New) ลงในช่องด้านล่างทั้ง 2 ช่องให้ตรงกัน
                         <br>3. การเข้าระบบครั้งต่อไป <u>ต้องใช้</u> เลขบัตรประจำตัวประชาชน 13 หลัก เป็น "ชื่อผู้ใช้ (Username)" และใช้รหัสผ่านที่ท่านกำหนดใหม่ในครั้งนี้
                       </font>
@@ -621,24 +621,31 @@
             <tr>
               <td align="center"><br>
                 <form onsubmit="handleChangePassword(event)">
-                  <table width="540" border="1" align="center" cellpadding="8" cellspacing="0">
+                  <table width="560" border="1" align="center" cellpadding="8" cellspacing="0">
                     <tr>
                       <td align="center">
-                        <table width="96%" border="0" align="center" cellpadding="4">
+                        <table width="98%" border="0" align="center" cellpadding="4">
                           <tr>
-                            <td align="right" width="42%"><font color="#0000CC"><strong>เบอร์โทรศัพท์ที่ลงทะเบียน :</strong></font></td>
+                            <td align="right" width="40%"><font color="#0000CC"><strong>เบอร์โทรศัพท์ที่ลงทะเบียน :</strong></font></td>
                             <td>
-                              <input type="text" id="chpPhone" size="15" maxlength="10" placeholder="เช่น 0812345678" required>
-                              <button type="button" id="btnChpReqOtp" onclick="requestChpOtp()" style="background:#2563eb; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">📲 ขอรหัส OTP</button>
+                              <input type="text" id="chpPhone" size="15" maxlength="10" placeholder="เช่น 0812345678">
+                              <button type="button" id="btnChpReqOtp" onclick="requestChpOtp('phone')" style="background:#2563eb; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">📲 ขอรหัส OTP (เบอร์โทร)</button>
+                            </td>
+                          </tr>
+                          <tr>
+                            <td align="right"><font color="#0000CC"><strong>หรือ อีเมล (Email) ที่ลงทะเบียน :</strong></font></td>
+                            <td>
+                              <input type="email" id="chpEmail" size="20" maxlength="100" placeholder="เช่น name@example.com">
+                              <button type="button" id="btnChpReqEmailOtp" onclick="requestChpOtp('email')" style="background:#0d9488; color:#fff; border:none; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold; font-size:12px;">📧 ขอรหัส OTP (อีเมล)</button>
                             </td>
                           </tr>
                           <tr id="chpOtpInfoRow" style="display:none;">
                             <td colspan="2">
                               <div style="background:#f0fdf4; border:1px solid #86efac; padding:8px 10px; border-radius:6px; font-size:13px; text-align:left;">
-                                <div id="chpSmsStatusText" style="font-weight:bold; color:#15803d;">📲 ระบบได้สร้างรหัส OTP 6 หลัก ส่งเข้าหมายเลขโทรศัพท์ <b id="chpMaskedPhone" style="color:#1d4ed8;">-</b> แล้ว</div>
+                                <div id="chpSmsStatusText" style="font-weight:bold; color:#15803d;">📲 ระบบได้สร้างรหัส OTP 6 หลัก สำหรับ <b id="chpMaskedPhone" style="color:#1d4ed8;">-</b> แล้ว</div>
                                 <div style="margin-top:4px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
                                   <span>🔢 <b>Ref Code:</b> <span id="chpRefCode" style="font-weight:bold;">-</span> | ⏳ <b>อายุรหัส OTP:</b> <span id="chpTimerText" style="color:#dc2626; font-weight:bold;">05:00 นาที</span></span>
-                                  <button type="button" id="btnRevealChpOtp" onclick="revealChpFallbackOtp()" style="display:none; background:#fffbeb; color:#b45309; border:1px solid #fcd34d; padding:2px 8px; border-radius:4px; font-size:11.5px; cursor:pointer; font-weight:bold;">💬 ไม่ได้รับ SMS ในมือถือ? คลิกดูรหัส OTP</button>
+                                  <button type="button" id="btnRevealChpOtp" onclick="revealChpFallbackOtp()" style="display:none; background:#fffbeb; color:#b45309; border:1px solid #fcd34d; padding:2px 8px; border-radius:4px; font-size:11.5px; cursor:pointer; font-weight:bold;">💬 ไม่ได้รับรหัส OTP? คลิกดูรหัส OTP</button>
                                 </div>
                                 <div id="chpFallbackOtpBox" style="display:none; margin-top:6px; padding:6px 8px; background:#fef9c3; border:1px solid #fde047; border-radius:4px; color:#854d0e; font-size:12.5px;">
                                   💬 <b>รหัสยืนยัน OTP 6 หลักของคุณคือ:</b>
@@ -654,10 +661,6 @@
                               <input type="text" id="chpOtpCode" size="14" maxlength="6" placeholder="กรอกรหัส OTP 6 หลัก" required style="font-weight:bold; color:#166534; letter-spacing:1px;">
                               <font size="-1" color="#666666">(อายุ 5 นาที)</font>
                             </td>
-                          </tr>
-                          <tr>
-                            <td align="right"><font color="#0000CC"><strong>อีเมล (Email) :</strong></font></td>
-                            <td><input type="email" id="chpEmail" size="25" maxlength="100" placeholder="เช่น name@example.com"></td>
                           </tr>
                           <tr>
                             <td align="right"><font color="#0000CC"><strong>กำหนดรหัสผ่านใหม่ (New) :</strong></font></td>
@@ -699,27 +702,40 @@
   </div>
 
   <!-- ==================================================================== -->
-  <!-- MODAL: ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้ไขรหัสผ่าน -->
+  <!-- MODAL: ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ หรือ อีเมล ที่ลงทะเบียนไว้เพื่อแก้ไขรหัสผ่าน -->
   <!-- ==================================================================== -->
   <div id="otpModal" class="modal-overlay">
     <div class="modal-card">
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:12px;">
-        <strong style="color:#1e40af; font-size:15.5px;">📲 ยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้รหัสผ่าน</strong>
+        <strong style="color:#1e40af; font-size:15px;">🔐 ยืนยันตัวตนด้วย OTP (เบอร์โทรศัพท์ หรือ อีเมล) เพื่อแก้รหัสผ่าน</strong>
         <button onclick="closeOtpModal()" style="border:none; background:#f1f5f9; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">✕</button>
       </div>
 
-      <!-- Step 1: กรอกเลข 13 หลัก + หมายเลขโทรศัพท์ที่ลงทะเบียนไว้ -->
+      <!-- Step 1: กรอกเลข 13 หลัก + เลือกยืนยันด้วยหมายเลขโทรศัพท์ หรือ อีเมล -->
       <div id="otpStep1">
-        <p style="font-size:13px; color:#334155; margin-top:0; line-height:1.5;">
-          กรุณากรอก <b>เลขประจำตัวประชาชน 13 หลัก</b> และ <b>หมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ในระบบ</b> เพื่อรับรหัสยืนยันตัวตน (OTP) สำหรับตั้งรหัสผ่านใหม่
+        <p style="font-size:13px; color:#334155; margin-top:0; margin-bottom:10px; line-height:1.5;">
+          กรุณากรอก <b>เลขประจำตัวประชาชน 13 หลัก</b> และเลือกช่องทางยืนยันตัวตนด้วย <b>หมายเลขโทรศัพท์</b> หรือ <b>อีเมล (Email)</b> ที่ลงทะเบียนไว้ในระบบ
         </p>
         <div style="margin-bottom:10px;">
           <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">1. เลขประจำตัวประชาชน 13 หลัก:</label>
           <input type="text" id="otpIdno" maxlength="13" placeholder="เช่น 3330100466968" style="width:100%; padding:8px; font-size:15px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
         </div>
+
+        <div style="margin-bottom:8px;">
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:5px;">2. เลือกช่องทางยืนยันตัวตนที่ลงทะเบียนไว้:</label>
+          <div style="display:flex; gap:6px;">
+            <button type="button" id="tabOtpPhone" onclick="setOtpChannel('phone')" style="flex:1; padding:8px 6px; background:#2563eb; color:#fff; border:2px solid #2563eb; border-radius:5px; font-weight:bold; font-size:13px; cursor:pointer;">
+              📲 ยืนยันด้วยเบอร์โทรศัพท์
+            </button>
+            <button type="button" id="tabOtpEmail" onclick="setOtpChannel('email')" style="flex:1; padding:8px 6px; background:#f8fafc; color:#334155; border:1px solid #cbd5e1; border-radius:5px; font-weight:bold; font-size:13px; cursor:pointer;">
+              📧 ยืนยันด้วยอีเมล (Email)
+            </button>
+          </div>
+        </div>
+
         <div style="margin-bottom:14px;">
-          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px;">2. หมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก):</label>
-          <input type="tel" id="otpContactInput" maxlength="12" placeholder="กรอกเบอร์โทรศัพท์ที่ลงทะเบียนไว้ เช่น 0652424982" style="width:100%; padding:8px; font-size:15px; border:1px solid #2563eb; border-radius:4px; box-sizing:border-box; background:#eff6ff;">
+          <label id="otpContactLabel" style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#1e40af;">กรอกหมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก):</label>
+          <input type="text" id="otpContactInput" maxlength="100" placeholder="กรอกเบอร์โทรศัพท์ที่ลงทะเบียนไว้ เช่น 0652424982" style="width:100%; padding:8px; font-size:15px; border:1px solid #2563eb; border-radius:4px; box-sizing:border-box; background:#eff6ff;">
         </div>
         <button onclick="requestOtpCode()" id="btnReqOtp" style="width:100%; padding:10px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:14px;">
           📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP
@@ -731,7 +747,7 @@
         <div style="background:#f0fdf4; border:1px solid #86efac; padding:10px; border-radius:6px; font-size:13px; margin-bottom:10px; line-height:1.55;">
           <div>👤 <b>ชื่อ-สกุล:</b> <span id="otpMemName">-</span> (<span id="otpMemPos">-</span>)</div>
           <div id="otpSmsStatusText" style="color:#15803d; font-weight:bold; margin-top:3px;">
-            📲 ระบบได้สร้างรหัส OTP 6 หลัก ส่งเข้าหมายเลขโทรศัพท์ <span id="otpMaskedPhone" style="color:#1d4ed8; text-decoration:underline;">-</span> เรียบร้อยแล้ว
+            📲 ระบบได้สร้างรหัส OTP 6 หลัก สำหรับ <span id="otpChannelText">หมายเลขโทรศัพท์</span> <span id="otpMaskedPhone" style="color:#1d4ed8; text-decoration:underline;">-</span> เรียบร้อยแล้ว
           </div>
           <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #86efac; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px;">
             <span>🔢 <b>Ref Code:</b> <b id="otpRefCode" style="color:#1e40af;">-</b></span>
@@ -740,14 +756,14 @@
           </div>
           <div id="otpRevealBtnWrap" style="display:none; margin-top:6px;">
             <button type="button" onclick="revealModalFallbackOtp()" style="width:100%; background:#fffbeb; color:#b45309; border:1px solid #fcd34d; padding:5px 8px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">
-              💬 ไม่ได้รับข้อความ SMS ในมือถือ? คลิกเพื่อแสดงรหัส OTP 6 หลักสำหรับเบอร์ที่ยืนยันแล้ว
+              💬 ไม่ได้รับรหัส OTP? คลิกเพื่อแสดงรหัส OTP 6 หลักสำหรับข้อมูลที่ยืนยันแล้ว
             </button>
           </div>
           <div id="otpFallbackBox" style="display:none; margin-top:8px; padding:7px 9px; background:#fef9c3; border:1px solid #fde047; border-radius:5px; color:#854d0e; font-size:12.5px;">
-            💬 <b>รหัส OTP 6 หลักสำหรับเบอร์ <span id="otpFallbackPhone">-</span> คือ:</b>
+            💬 <b>รหัส OTP 6 หลักสำหรับ <span id="otpFallbackPhone">-</span> คือ:</b>
             <span id="otpFallbackCode" style="font-size:16px; font-weight:bold; color:#b91c1c; background:#fff; padding:1px 8px; border-radius:4px; border:1px solid #facc15; letter-spacing:1.5px;">------</span>
             <button type="button" onclick="fillModalFallbackOtp()" style="margin-left:4px; background:#16a34a; color:#fff; border:none; padding:3px 8px; border-radius:4px; cursor:pointer; font-size:11.5px; font-weight:bold;">📋 คลิกนำไปกรอก</button>
-            <div id="otpFallbackNote" style="font-size:11px; color:#713f12; margin-top:3px;">* ระบบแสดงรหัส OTP สำรองให้สำหรับหมายเลขโทรศัพท์ที่ยืนยันตรงกับฐานข้อมูลแล้ว</div>
+            <div id="otpFallbackNote" style="font-size:11px; color:#713f12; margin-top:3px;">* ระบบแสดงรหัส OTP สำหรับข้อมูลที่ยืนยันตรงกับฐานข้อมูลแล้ว</div>
           </div>
         </div>
 
@@ -755,7 +771,7 @@
         <input type="hidden" id="otpEditEmail">
 
         <div style="margin-bottom:10px;">
-          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#166534;">📲 นำรหัส OTP 6 หลัก ที่ได้รับทางหมายเลขโทรศัพท์มากรอกยืนยัน:</label>
+          <label style="font-size:13px; font-weight:bold; display:block; margin-bottom:4px; color:#166534;">📲 นำรหัส OTP 6 หลัก ที่ได้รับมากรอกยืนยัน:</label>
           <input type="text" id="otpInputCode" maxlength="6" inputmode="numeric" autocomplete="one-time-code" placeholder="กรอกรหัส OTP 6 หลัก (ภายใน 5 นาที)" style="width:100%; padding:8px; font-size:16px; font-weight:bold; letter-spacing:3px; border:2px solid #16a34a; border-radius:4px; box-sizing:border-box; text-align:center;">
         </div>
 

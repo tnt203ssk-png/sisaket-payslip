@@ -445,7 +445,16 @@ export async function onRequest(context) {
       return clean.slice(0, 2) + 'x-xxx-' + clean.slice(-4);
     };
 
-    // 4. Change Password & Update Phone/Email (logged-in user - requires OTP verification via registered phone)
+    const maskEmailStr = (rawEmail) => {
+      const clean = String(rawEmail || '').trim();
+      if (!clean || !clean.includes('@')) return 'ยังไม่ได้ลงทะเบียนอีเมล';
+      const parts = clean.split('@');
+      const namePart = parts[0];
+      const domPart = parts[1] || '';
+      return (namePart.length > 2 ? namePart.slice(0, 2) + '***' : namePart.slice(0, 1) + '***') + '@' + domPart;
+    };
+
+    // 4. Change Password & Update Phone/Email (logged-in user - requires OTP verification via registered phone or email)
     if (action === 'change_password') {
       const idno = String(body.idno || '').trim();
       const newPass = String(body.new_password || '').trim();
@@ -503,11 +512,13 @@ export async function onRequest(context) {
       }), { headers: corsHeaders });
     }
 
-    // 5. Request OTP via Registered Phone Number
+    // 5. Request OTP via Registered Phone Number OR Registered Email
     if (action === 'request_otp') {
       const idno = String(body.idno || '').trim();
-      const rawInputPhone = String(body.phone || body.contact || '').trim();
-      const inputPhone = normPhone(rawInputPhone);
+      const rawContact = String(body.contact || body.phone || body.email || '').trim();
+      const reqChannel = String(body.channel || (rawContact.includes('@') ? 'email' : 'phone')).trim().toLowerCase();
+      const inputPhone = normPhone(body.phone || (reqChannel === 'phone' ? rawContact : ''));
+      const inputEmail = String(body.email || (reqChannel === 'email' ? rawContact : '')).trim().toLowerCase();
       const isLoggedIn = Boolean(body.logged_in);
 
       if (!idno || idno.length !== 13) {
@@ -531,169 +542,241 @@ export async function onRequest(context) {
 
       const member = qMem.rows[0];
       const regPhone = normPhone(member.mbphone);
-      const email = String(member.email || '').trim();
+      const regEmail = String(member.email || '').trim();
       const hasPhone = regPhone.length >= 9;
-      const hasEmail = email.includes('@');
+      const hasEmail = regEmail.includes('@');
       const maskedRegPhone = maskPhoneStr(regPhone);
+      const maskedRegEmail = maskEmailStr(regEmail);
 
-      if (hasPhone) {
-        if (!inputPhone) {
-          db.close();
-          return new Response(JSON.stringify({
-            success: false,
-            message: `กรุณากรอกหมายเลขโทรศัพท์ที่ลงทะเบียนไว้ (${maskedRegPhone}) เพื่อยืนยันตัวตนและรับรหัส OTP`
-          }), { headers: corsHeaders });
-        }
-        if (inputPhone !== regPhone) {
-          db.close();
-          return new Response(JSON.stringify({
-            success: false,
-            message: `หมายเลขโทรศัพท์ที่กรอกไม่ตรงกับหมายเลขที่ลงทะเบียนไว้ในระบบ (${maskedRegPhone})`
-          }), { headers: corsHeaders });
+      let verifyChannel = reqChannel === 'email' ? 'email' : 'phone';
+      let targetPhone = regPhone;
+      let targetEmail = regEmail;
+
+      if (verifyChannel === 'email') {
+        if (hasEmail) {
+          if (!inputEmail || !inputEmail.includes('@')) {
+            db.close();
+            return new Response(JSON.stringify({
+              success: false,
+              message: `กรุณากรอกอีเมลที่ลงทะเบียนไว้ (${maskedRegEmail}) เพื่อยืนยันตัวตนและรับรหัส OTP`
+            }), { headers: corsHeaders });
+          }
+          if (inputEmail !== regEmail.toLowerCase()) {
+            db.close();
+            return new Response(JSON.stringify({
+              success: false,
+              message: `อีเมลที่กรอกไม่ตรงกับอีเมลที่ลงทะเบียนไว้ในระบบ (${maskedRegEmail})`
+            }), { headers: corsHeaders });
+          }
+          targetEmail = regEmail;
+        } else {
+          if (!isLoggedIn) {
+            db.close();
+            const phoneHint = hasPhone ? ` (ท่านสามารถเลือกยืนยันตัวตนด้วยหมายเลขโทรศัพท์ ${maskedRegPhone} แทนได้ทันที)` : '';
+            return new Response(JSON.stringify({
+              success: false,
+              message: `ไม่พบข้อมูลอีเมลที่ลงทะเบียนไว้สำหรับเลขประชาชนนี้ในระบบ${phoneHint} หรือติดต่อผู้ดูแลระบบเพื่อเพิ่มอีเมล`
+            }), { headers: corsHeaders });
+          }
+          if (!inputEmail || !inputEmail.includes('@')) {
+            db.close();
+            return new Response(JSON.stringify({
+              success: false,
+              message: 'กรุณากรอกอีเมลของท่านให้ถูกต้อง (เช่น name@gmail.com) เพื่อลงทะเบียนและรับรหัส OTP'
+            }), { headers: corsHeaders });
+          }
+          targetEmail = inputEmail;
         }
       } else {
-        if (!isLoggedIn) {
-          db.close();
-          return new Response(JSON.stringify({
-            success: false,
-            message: 'ไม่พบหมายเลขโทรศัพท์ที่ลงทะเบียนไว้สำหรับเลขประชาชนนี้ กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มเบอร์โทรศัพท์ในระบบก่อน'
-          }), { headers: corsHeaders });
-        }
-        if (!inputPhone || inputPhone.length < 9) {
-          db.close();
-          return new Response(JSON.stringify({
-            success: false,
-            message: 'กรุณากรอกหมายเลขโทรศัพท์มือถือ 10 หลักของท่านเพื่อลงทะเบียนและรับรหัส OTP'
-          }), { headers: corsHeaders });
+        // verifyChannel === 'phone'
+        if (hasPhone) {
+          if (!inputPhone) {
+            db.close();
+            return new Response(JSON.stringify({
+              success: false,
+              message: `กรุณากรอกหมายเลขโทรศัพท์ที่ลงทะเบียนไว้ (${maskedRegPhone}) เพื่อยืนยันตัวตนและรับรหัส OTP`
+            }), { headers: corsHeaders });
+          }
+          if (inputPhone !== regPhone) {
+            db.close();
+            return new Response(JSON.stringify({
+              success: false,
+              message: `หมายเลขโทรศัพท์ที่กรอกไม่ตรงกับหมายเลขที่ลงทะเบียนไว้ในระบบ (${maskedRegPhone})`
+            }), { headers: corsHeaders });
+          }
+          targetPhone = regPhone;
+        } else {
+          if (!isLoggedIn) {
+            db.close();
+            const emailHint = hasEmail ? ` (ท่านสามารถเลือกยืนยันตัวตนด้วยอีเมล ${maskedRegEmail} แทนได้ทันที)` : '';
+            return new Response(JSON.stringify({
+              success: false,
+              message: `ไม่พบหมายเลขโทรศัพท์ที่ลงทะเบียนไว้สำหรับเลขประชาชนนี้${emailHint} กรุณาติดต่อผู้ดูแลระบบเพื่อเพิ่มเบอร์โทรศัพท์ในระบบก่อน`
+            }), { headers: corsHeaders });
+          }
+          if (!inputPhone || inputPhone.length < 9) {
+            db.close();
+            return new Response(JSON.stringify({
+              success: false,
+              message: 'กรุณากรอกหมายเลขโทรศัพท์มือถือ 10 หลักของท่านเพื่อลงทะเบียนและรับรหัส OTP'
+            }), { headers: corsHeaders });
+          }
+          targetPhone = inputPhone;
         }
       }
 
-      const targetPhone = hasPhone ? regPhone : inputPhone;
       const otpCode = String(Math.floor(100000 + Math.random() * 900000));
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       let refCode = '';
       for (let i = 0; i < 4; i++) refCode += chars[Math.floor(Math.random() * chars.length)];
 
+      const otpTargetRecord = verifyChannel === 'email' ? targetEmail : targetPhone;
       await db.query(`
         INSERT INTO tb_otp (idno, mbphone, otp_code, ref_code, created_at, expires_at, is_used)
-        VALUES (${sqlEsc(idno)}, ${sqlEsc(targetPhone)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
+        VALUES (${sqlEsc(idno)}, ${sqlEsc(otpTargetRecord)}, ${sqlEsc(otpCode)}, ${sqlEsc(refCode)}, NOW(), DATE_ADD(NOW(), INTERVAL 5 MINUTE), 0);
       `);
 
-      // Real SMS Gateway integration (reads from tb_sms_config on 183.88.214.9 or Cloudflare Env Vars)
+      // Real SMS / Email Gateway integration
       let smsSent = false;
-      let smsStatusDetail = 'ยังไม่ได้ตั้งค่า SMS Gateway API Key (แสดงรหัส OTP บนหน้าจอแทน)';
+      let smsStatusDetail = '';
       const smsMsg = `รหัส OTP แก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ คือ ${otpCode} (Ref: ${refCode}) อายุ 5 นาที`;
 
-      try {
-        let provider = context.env?.SMS_PROVIDER || 'thaibulksms';
-        let apiKey = context.env?.SMS_API_KEY || '';
-        let apiSecret = context.env?.SMS_API_SECRET || '';
-        let sender = context.env?.SMS_SENDER || 'SmartSMS';
-
-        const qSmsCfg = await db.query("SELECT provider, api_key, api_secret, sender FROM tb_sms_config WHERE id = 1 LIMIT 1;");
-        if (qSmsCfg.rows.length > 0 && qSmsCfg.rows[0].api_key) {
-          provider = String(qSmsCfg.rows[0].provider || 'thaibulksms').trim().toLowerCase();
-          apiKey = String(qSmsCfg.rows[0].api_key || '').trim();
-          apiSecret = String(qSmsCfg.rows[0].api_secret || '').trim();
-          sender = String(qSmsCfg.rows[0].sender || 'SmartSMS').trim();
+      if (verifyChannel === 'email') {
+        // ยืนยันตัวตนผ่านอีเมล (Email Verification)
+        try {
+          const emailWebhook = context.env?.EMAIL_WEBHOOK_URL || '';
+          if (emailWebhook) {
+            const emRes = await fetch(emailWebhook, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                to: targetEmail,
+                subject: `รหัส OTP (${otpCode}) ยืนยันการแก้ไขรหัสผ่านสลิปเงินเดือน อบจ.ศรีสะเกษ [Ref: ${refCode}]`,
+                message: smsMsg,
+                otp_code: otpCode,
+                ref_code: refCode,
+                member_name: member.nname
+              })
+            });
+            smsSent = emRes.ok;
+          }
+        } catch (emErr) {
+          smsSent = false;
         }
+        smsStatusDetail = smsSent
+          ? `ส่งรหัส OTP ไปยังอีเมล ${maskEmailStr(targetEmail)} สำเร็จ`
+          : `ยืนยันอีเมล ${maskEmailStr(targetEmail)} ตรงกับฐานข้อมูลสำเร็จ (แสดงรหัส OTP 6 หลักสำหรับอีเมลที่ยืนยันแล้วด้านล่าง)`;
+      } else {
+        smsStatusDetail = 'ยังไม่ได้ตั้งค่า SMS Gateway API Key (แสดงรหัส OTP บนหน้าจอแทน)';
+        try {
+          let provider = context.env?.SMS_PROVIDER || 'thaibulksms';
+          let apiKey = context.env?.SMS_API_KEY || '';
+          let apiSecret = context.env?.SMS_API_SECRET || '';
+          let sender = context.env?.SMS_SENDER || 'SmartSMS';
 
-        if (apiKey) {
-          if (provider === 'textbee') {
-            // TextBee.dev Android SMS Gateway (Free using Android phone SIM)
-            // รองรับการใส่หลาย API Key / Device ID คั่นด้วยคอมม่า (,) เพื่อสลับอัตโนมัติเมื่อครบโควตา 50 ข้อความ/วัน
-            const intlPhone = targetPhone.startsWith('0') ? '+66' + targetPhone.slice(1) : targetPhone;
-            const keyList = apiKey.split(',').map(s => s.trim()).filter(Boolean);
-            const devList = apiSecret.split(',').map(s => s.trim()).filter(Boolean);
-            let lastStatus = 0;
-            for (let kIdx = 0; kIdx < keyList.length; kIdx++) {
-              const curKey = keyList[kIdx];
-              const curDev = devList[kIdx] || devList[0] || '';
-              if (!curKey || !curDev) continue;
-              const smsRes = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${curDev}/send-sms`, {
+          const qSmsCfg = await db.query("SELECT provider, api_key, api_secret, sender FROM tb_sms_config WHERE id = 1 LIMIT 1;");
+          if (qSmsCfg.rows.length > 0 && qSmsCfg.rows[0].api_key) {
+            provider = String(qSmsCfg.rows[0].provider || 'thaibulksms').trim().toLowerCase();
+            apiKey = String(qSmsCfg.rows[0].api_key || '').trim();
+            apiSecret = String(qSmsCfg.rows[0].api_secret || '').trim();
+            sender = String(qSmsCfg.rows[0].sender || 'SmartSMS').trim();
+          }
+
+          if (apiKey) {
+            if (provider === 'textbee') {
+              // TextBee.dev Android SMS Gateway (Free using Android phone SIM)
+              // รองรับการใส่หลาย API Key / Device ID คั่นด้วยคอมม่า (,) เพื่อสลับอัตโนมัติเมื่อครบโควตา 50 ข้อความ/วัน
+              const intlPhone = targetPhone.startsWith('0') ? '+66' + targetPhone.slice(1) : targetPhone;
+              const keyList = apiKey.split(',').map(s => s.trim()).filter(Boolean);
+              const devList = apiSecret.split(',').map(s => s.trim()).filter(Boolean);
+              let lastStatus = 0;
+              for (let kIdx = 0; kIdx < keyList.length; kIdx++) {
+                const curKey = keyList[kIdx];
+                const curDev = devList[kIdx] || devList[0] || '';
+                if (!curKey || !curDev) continue;
+                const smsRes = await fetch(`https://api.textbee.dev/api/v1/gateway/devices/${curDev}/send-sms`, {
+                  method: 'POST',
+                  headers: {
+                    'x-api-key': curKey,
+                    'Content-Type': 'application/json'
+                  },
+                  body: JSON.stringify({
+                    recipients: [intlPhone],
+                    message: smsMsg
+                  })
+                });
+                lastStatus = smsRes.status;
+                if (smsRes.ok) {
+                  smsSent = true;
+                  break;
+                }
+              }
+              if (smsSent) {
+                smsStatusDetail = 'ส่ง SMS ผ่านมือถือ Android Gateway (TextBee) สำเร็จ';
+              } else if (lastStatus === 429) {
+                smsStatusDetail = 'โควตาส่ง SMS ฟรีรายวันของ TextBee ครบ 50 ข้อความ/วันแล้ว (HTTP 429) แสดงรหัส OTP บนหน้าจอแทน';
+              } else {
+                smsStatusDetail = 'ส่ง SMS ผ่าน TextBee ไม่สำเร็จ (' + lastStatus + ') แสดงรหัส OTP บนหน้าจอแทน';
+              }
+            } else if (provider === 'smsmkt') {
+              // SMSMKT Thailand
+              const smsRes = await fetch('https://portal-otp.smsmkt.com/api/send-message', {
                 method: 'POST',
                 headers: {
-                  'x-api-key': curKey,
+                  'api_key': apiKey,
+                  'secret_key': apiSecret,
                   'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                  recipients: [intlPhone],
-                  message: smsMsg
+                  message: smsMsg,
+                  phone: targetPhone,
+                  sender: sender
                 })
               });
-              lastStatus = smsRes.status;
-              if (smsRes.ok) {
-                smsSent = true;
-                break;
-              }
-            }
-            if (smsSent) {
-              smsStatusDetail = 'ส่ง SMS ผ่านมือถือ Android Gateway (TextBee) สำเร็จ';
-            } else if (lastStatus === 429) {
-              smsStatusDetail = 'โควตาส่ง SMS ฟรีรายวันของ TextBee ครบ 50 ข้อความ/วันแล้ว (HTTP 429) แสดงรหัส OTP บนหน้าจอแทน';
+              smsSent = smsRes.ok;
+              smsStatusDetail = smsSent ? 'ส่ง SMS ผ่าน SMSMKT สำเร็จ' : 'ส่ง SMS ผ่าน SMSMKT ไม่สำเร็จ (' + smsRes.status + ')';
             } else {
-              smsStatusDetail = 'ส่ง SMS ผ่าน TextBee ไม่สำเร็จ (' + lastStatus + ') แสดงรหัส OTP บนหน้าจอแทน';
+              // Default: ThaiBulkSMS API v2
+              const auth = btoa(`${apiKey}:${apiSecret}`);
+              const smsRes = await fetch('https://api-v2.thaibulksms.com/sms', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Basic ${auth}`,
+                  'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: new URLSearchParams({
+                  msisdn: targetPhone,
+                  message: smsMsg,
+                  sender: sender || 'SmartSMS'
+                }).toString()
+              });
+              smsSent = smsRes.ok;
+              smsStatusDetail = smsSent ? 'ส่ง SMS ผ่าน ThaiBulkSMS สำเร็จ' : 'ส่ง SMS ผ่าน ThaiBulkSMS ไม่สำเร็จ (' + smsRes.status + ')';
             }
-          } else if (provider === 'smsmkt') {
-            // SMSMKT Thailand
-            const smsRes = await fetch('https://portal-otp.smsmkt.com/api/send-message', {
-              method: 'POST',
-              headers: {
-                'api_key': apiKey,
-                'secret_key': apiSecret,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                message: smsMsg,
-                phone: targetPhone,
-                sender: sender
-              })
-            });
-            smsSent = smsRes.ok;
-            smsStatusDetail = smsSent ? 'ส่ง SMS ผ่าน SMSMKT สำเร็จ' : 'ส่ง SMS ผ่าน SMSMKT ไม่สำเร็จ (' + smsRes.status + ')';
-          } else {
-            // Default: ThaiBulkSMS API v2
-            const auth = btoa(`${apiKey}:${apiSecret}`);
-            const smsRes = await fetch('https://api-v2.thaibulksms.com/sms', {
-              method: 'POST',
-              headers: {
-                'Authorization': `Basic ${auth}`,
-                'Content-Type': 'application/x-www-form-urlencoded'
-              },
-              body: new URLSearchParams({
-                msisdn: targetPhone,
-                message: smsMsg,
-                sender: sender || 'SmartSMS'
-              }).toString()
-            });
-            smsSent = smsRes.ok;
-            smsStatusDetail = smsSent ? 'ส่ง SMS ผ่าน ThaiBulkSMS สำเร็จ' : 'ส่ง SMS ผ่าน ThaiBulkSMS ไม่สำเร็จ (' + smsRes.status + ')';
           }
+        } catch (smsErr) {
+          smsStatusDetail = 'เกิดข้อผิดพลาดในการส่ง SMS: ' + (smsErr?.message || String(smsErr));
         }
-      } catch (smsErr) {
-        smsStatusDetail = 'เกิดข้อผิดพลาดในการส่ง SMS: ' + (smsErr?.message || String(smsErr));
       }
 
-      let maskedEmail = 'ยังไม่ได้ระบุอีเมล';
-      if (hasEmail) {
-        const parts = email.split('@');
-        const namePart = parts[0];
-        const domPart = parts[1] || '';
-        maskedEmail = (namePart.length > 2 ? namePart.slice(0, 2) + '***' : namePart + '***') + '@' + domPart;
-      }
-
+      const maskedEmail = maskEmailStr(targetEmail);
+      const maskedPhone = maskPhoneStr(targetPhone);
       const isAdminReq = Boolean(body.is_admin);
       db.close();
       return new Response(JSON.stringify({
         success: true,
-        message: `ระบบได้สร้างรหัส OTP 6 หลัก และส่งไปยังหมายเลขโทรศัพท์ ${maskPhoneStr(targetPhone)} เรียบร้อยแล้ว กรุณานำรหัสมากรอกยืนยันภายใน 5 นาที`,
+        channel: verifyChannel,
+        message: verifyChannel === 'email'
+          ? `ระบบได้ตรวจสอบอีเมล ${maskedEmail} และสร้างรหัส OTP 6 หลักเรียบร้อยแล้ว กรุณานำรหัสมากรอกยืนยันภายใน 5 นาที`
+          : `ระบบได้สร้างรหัส OTP 6 หลัก และส่งไปยังหมายเลขโทรศัพท์ ${maskedPhone} เรียบร้อยแล้ว กรุณานำรหัสมากรอกยืนยันภายใน 5 นาที`,
         ref_code: refCode,
-        masked_phone: maskPhoneStr(targetPhone),
+        masked_phone: maskedPhone,
         masked_email: maskedEmail,
-        has_phone: true,
+        masked_target: verifyChannel === 'email' ? maskedEmail : maskedPhone,
+        has_phone: hasPhone,
         has_email: hasEmail,
         mbphone: targetPhone,
-        email: email,
+        email: targetEmail,
         member_name: member.nname,
         member_position: member.nposit,
         expires_in_seconds: 300,

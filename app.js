@@ -349,19 +349,29 @@ function hideSmsNotification() {
 }
 
 // ============================================================================
-// ระบบเปลี่ยนรหัสผ่านเมื่อล็อกอินแล้ว (ยืนยัน OTP ผ่านเบอร์โทรศัพท์ที่ลงทะเบียนไว้)
+// ระบบเปลี่ยนรหัสผ่านเมื่อล็อกอินแล้ว (ยืนยัน OTP ผ่านเบอร์โทรศัพท์ หรือ อีเมล ที่ลงทะเบียนไว้)
 // ============================================================================
 let chpCurrentRef = '';
 
-async function requestChpOtp() {
+async function requestChpOtp(channel = 'phone') {
   if (!currentMember) return;
   const chpPhone = document.getElementById('chpPhone') ? document.getElementById('chpPhone').value.trim() : '';
-  if (!chpPhone || chpPhone.replace(/[^0-9]/g, '').length < 9) {
-    alert('กรุณากรอกหมายเลขโทรศัพท์ที่ลงทะเบียนไว้ (10 หลัก) ก่อนกดขอรหัส OTP');
-    return;
+  const chpEmail = document.getElementById('chpEmail') ? document.getElementById('chpEmail').value.trim() : '';
+
+  if (channel === 'email') {
+    if (!chpEmail || !chpEmail.includes('@')) {
+      alert('กรุณากรอกอีเมล (Email) ที่ลงทะเบียนไว้ เช่น name@gmail.com ก่อนกดขอรหัส OTP ทางอีเมล');
+      return;
+    }
+  } else {
+    if (!chpPhone || chpPhone.replace(/[^0-9]/g, '').length < 9) {
+      alert('กรุณากรอกหมายเลขโทรศัพท์ที่ลงทะเบียนไว้ (10 หลัก) ก่อนกดขอรหัส OTP ทางเบอร์โทรศัพท์');
+      return;
+    }
   }
 
-  const btn = document.getElementById('btnChpReqOtp');
+  const btn = channel === 'email' ? document.getElementById('btnChpReqEmailOtp') : document.getElementById('btnChpReqOtp');
+  const origText = btn ? btn.textContent : '';
   if (btn) {
     btn.disabled = true;
     btn.textContent = 'กำลังส่ง OTP...';
@@ -374,7 +384,10 @@ async function requestChpOtp() {
       body: JSON.stringify({
         action: 'request_otp',
         idno: currentMember.idno,
+        channel: channel,
         phone: chpPhone,
+        email: chpEmail,
+        contact: channel === 'email' ? chpEmail : chpPhone,
         logged_in: true,
         is_admin: isCurrentUserAdmin()
       })
@@ -386,7 +399,8 @@ async function requestChpOtp() {
     }
 
     chpCurrentRef = data.ref_code;
-    document.getElementById('chpMaskedPhone').textContent = data.masked_phone || chpPhone;
+    const targetDisp = data.masked_target || (channel === 'email' ? (data.masked_email || chpEmail) : (data.masked_phone || chpPhone));
+    document.getElementById('chpMaskedPhone').textContent = targetDisp;
     document.getElementById('chpRefCode').textContent = data.ref_code || '-';
     document.getElementById('chpOtpCode').value = '';
     document.getElementById('chpOtpInfoRow').style.display = '';
@@ -402,14 +416,14 @@ async function requestChpOtp() {
       }
     }
     startOtpCountdown('chpTimerText', false);
-    showSmsNotification(data.masked_phone || chpPhone, data.demo_otp, data.ref_code);
+    showSmsNotification(targetDisp, data.demo_otp, data.ref_code);
     document.getElementById('chpOtpCode').focus();
   } catch (err) {
     alert('เกิดข้อผิดพลาด: ' + err.message);
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = '📲 ขอรหัส OTP';
+      btn.textContent = origText || (channel === 'email' ? '📧 ขอรหัส OTP (อีเมล)' : '📲 ขอรหัส OTP (เบอร์โทร)');
     }
   }
 }
@@ -497,14 +511,79 @@ function handleLogout() {
 }
 
 // ============================================================================
-// ระบบยืนยัน OTP ผ่านหมายเลขโทรศัพท์ที่ลงทะเบียนไว้เพื่อแก้ไขรหัสผ่าน
+// ระบบยืนยัน OTP ผ่านหมายเลขโทรศัพท์ หรือ อีเมล ที่ลงทะเบียนไว้เพื่อแก้ไขรหัสผ่าน
 // ============================================================================
 let otpCurrentRef = '';
 let otpCurrentIdno = '';
 let otpVerifiedPhone = '';
+let otpSelectedChannel = 'phone';
 
-function openOtpModal() {
+function setOtpChannel(channel) {
+  otpSelectedChannel = channel === 'email' ? 'email' : 'phone';
+  const tabPhone = document.getElementById('tabOtpPhone');
+  const tabEmail = document.getElementById('tabOtpEmail');
+  const label = document.getElementById('otpContactLabel');
+  const input = document.getElementById('otpContactInput');
+  const btn = document.getElementById('btnReqOtp');
+
+  if (otpSelectedChannel === 'email') {
+    if (tabEmail) {
+      tabEmail.style.background = '#0d9488';
+      tabEmail.style.color = '#ffffff';
+      tabEmail.style.border = '2px solid #0d9488';
+    }
+    if (tabPhone) {
+      tabPhone.style.background = '#f8fafc';
+      tabPhone.style.color = '#334155';
+      tabPhone.style.border = '1px solid #cbd5e1';
+    }
+    if (label) {
+      label.textContent = 'กรอกอีเมล (Email) ที่ลงทะเบียนไว้ในระบบ:';
+      label.style.color = '#0f766e';
+    }
+    if (input) {
+      input.placeholder = 'กรอกอีเมลที่ลงทะเบียนไว้ เช่น name@gmail.com';
+      input.style.borderColor = '#0d9488';
+      input.style.background = '#f0fdfa';
+      input.value = '';
+      input.focus();
+    }
+    if (btn) {
+      btn.style.background = '#0d9488';
+      btn.textContent = '📧 ยืนยันอีเมลและขอรหัส OTP';
+    }
+  } else {
+    if (tabPhone) {
+      tabPhone.style.background = '#2563eb';
+      tabPhone.style.color = '#ffffff';
+      tabPhone.style.border = '2px solid #2563eb';
+    }
+    if (tabEmail) {
+      tabEmail.style.background = '#f8fafc';
+      tabEmail.style.color = '#334155';
+      tabEmail.style.border = '1px solid #cbd5e1';
+    }
+    if (label) {
+      label.textContent = 'กรอกหมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก):';
+      label.style.color = '#1e40af';
+    }
+    if (input) {
+      input.placeholder = 'กรอกเบอร์โทรศัพท์ที่ลงทะเบียนไว้ เช่น 0652424982';
+      input.style.borderColor = '#2563eb';
+      input.style.background = '#eff6ff';
+      input.value = '';
+      input.focus();
+    }
+    if (btn) {
+      btn.style.background = '#2563eb';
+      btn.textContent = '📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP';
+    }
+  }
+}
+
+function openOtpModal(defaultChannel = 'phone') {
   resetOtpModal();
+  setOtpChannel(defaultChannel);
   const typedId = document.getElementById('usnm').value.trim();
   if (typedId.length === 13) {
     document.getElementById('otpIdno').value = typedId;
@@ -532,47 +611,71 @@ function resetOtpModal() {
 
 async function requestOtpCode() {
   const idno = document.getElementById('otpIdno').value.trim();
-  const phone = document.getElementById('otpContactInput') ? document.getElementById('otpContactInput').value.trim() : '';
+  const rawContact = document.getElementById('otpContactInput') ? document.getElementById('otpContactInput').value.trim() : '';
   if (idno.length !== 13) {
     alert('กรุณากรอกเลขประจำตัวประชาชน 13 หลักให้ครบถ้วน');
     return;
   }
-  if (!phone || phone.replace(/[^0-9]/g, '').length < 9) {
-    alert('กรุณากรอกหมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก) เพื่อยืนยันตัวตน');
-    return;
+
+  // ถ้าระบุ @ ในช่องกรอก ให้สลับเป็นโหมดยืนยันด้วยอีเมลอัตโนมัติ
+  const activeChannel = rawContact.includes('@') ? 'email' : otpSelectedChannel;
+
+  if (activeChannel === 'email') {
+    if (!rawContact || !rawContact.includes('@')) {
+      alert('กรุณากรอกอีเมล (Email) ที่ลงทะเบียนไว้ในระบบ เช่น name@gmail.com เพื่อยืนยันตัวตน');
+      return;
+    }
+  } else {
+    if (!rawContact || rawContact.replace(/[^0-9]/g, '').length < 9) {
+      alert('กรุณากรอกหมายเลขโทรศัพท์มือถือที่ลงทะเบียนไว้ (10 หลัก) เพื่อยืนยันตัวตน');
+      return;
+    }
   }
 
   const btn = document.getElementById('btnReqOtp');
   btn.disabled = true;
-  btn.textContent = 'กำลังตรวจสอบเบอร์โทรศัพท์และส่งรหัส OTP...';
+  btn.textContent = activeChannel === 'email'
+    ? 'กำลังตรวจสอบอีเมลและสร้างรหัส OTP...'
+    : 'กำลังตรวจสอบเบอร์โทรศัพท์และส่งรหัส OTP...';
 
   try {
     const res = await fetch(API_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'request_otp', idno, phone, is_admin: isCurrentUserAdmin() })
+      body: JSON.stringify({
+        action: 'request_otp',
+        idno,
+        channel: activeChannel,
+        contact: rawContact,
+        phone: activeChannel === 'phone' ? rawContact : '',
+        email: activeChannel === 'email' ? rawContact : '',
+        is_admin: isCurrentUserAdmin()
+      })
     });
     const data = await res.json();
     if (!data.success) {
-      alert(data.message || 'ไม่สามารถยืนยันหมายเลขโทรศัพท์ได้');
+      alert(data.message || 'ไม่สามารถยืนยันข้อมูลได้');
       return;
     }
 
     otpCurrentIdno = idno;
     otpCurrentRef = data.ref_code;
-    otpVerifiedPhone = data.mbphone || phone.replace(/[^0-9]/g, '');
+    otpVerifiedPhone = data.mbphone || (activeChannel === 'phone' ? rawContact.replace(/[^0-9]/g, '') : '');
+    const targetDisplay = data.masked_target || (activeChannel === 'email' ? data.masked_email : data.masked_phone) || '-';
 
     document.getElementById('otpMemName').textContent = data.member_name || '-';
     document.getElementById('otpMemPos').textContent = data.member_position || '-';
-    document.getElementById('otpMaskedPhone').textContent = data.masked_phone || '-';
+    if (document.getElementById('otpChannelText')) {
+      document.getElementById('otpChannelText').textContent = activeChannel === 'email' ? 'อีเมล' : 'หมายเลขโทรศัพท์';
+    }
+    document.getElementById('otpMaskedPhone').textContent = targetDisplay;
     if (document.getElementById('otpEditPhone')) {
       document.getElementById('otpEditPhone').value = otpVerifiedPhone;
     }
     if (document.getElementById('otpEditEmail')) {
-      document.getElementById('otpEditEmail').value = data.email || '';
+      document.getElementById('otpEditEmail').value = data.email || (activeChannel === 'email' ? rawContact : '');
     }
     document.getElementById('otpRefCode').textContent = data.ref_code || '-';
-    // เว้นช่องกรอกรหัส OTP 6 หลักให้ว่าง เพื่อให้สมาชิกนำรหัสที่ส่งเข้าหมายเลขโทรศัพท์มากรอกยืนยันเอง
     document.getElementById('otpInputCode').value = '';
     document.getElementById('otpNewPassword').value = '';
     if (document.getElementById('otpNewPasswordConfirm')) {
@@ -580,12 +683,16 @@ async function requestOtpCode() {
     }
     const modalOtpVal = data.fallback_otp || data.demo_otp || '';
     if (document.getElementById('otpFallbackBox')) {
-      document.getElementById('otpFallbackPhone').textContent = data.masked_phone || otpVerifiedPhone;
+      document.getElementById('otpFallbackPhone').textContent = targetDisplay;
       document.getElementById('otpFallbackCode').textContent = modalOtpVal || '------';
       if (document.getElementById('otpFallbackNote')) {
-        document.getElementById('otpFallbackNote').textContent = !data.sms_sent
-          ? '* โควตาส่ง SMS ฟรีรายวันเต็มชั่วคราว ระบบจึงแสดงรหัส OTP 6 หลักสำหรับเบอร์ที่ยืนยันถูกต้องแล้วด้านบน สามารถกดปุ่ม "📋 คลิกนำไปกรอก" ได้ทันที'
-          : '* รหัส OTP 6 หลักสำหรับหมายเลขโทรศัพท์ที่ยืนยันตรงกับฐานข้อมูลแล้ว';
+        if (activeChannel === 'email') {
+          document.getElementById('otpFallbackNote').textContent = '* ยืนยันอีเมลตรงกับฐานข้อมูลสำเร็จ สามารถกดปุ่ม "📋 คลิกนำไปกรอก" เพื่อยืนยันรหัส OTP 6 หลักได้ทันที';
+        } else {
+          document.getElementById('otpFallbackNote').textContent = !data.sms_sent
+            ? '* โควตาส่ง SMS ฟรีรายวันเต็มชั่วคราว ระบบจึงแสดงรหัส OTP 6 หลักสำหรับเบอร์ที่ยืนยันถูกต้องแล้วด้านบน สามารถกดปุ่ม "📋 คลิกนำไปกรอก" ได้ทันที'
+            : '* รหัส OTP 6 หลักสำหรับหมายเลขโทรศัพท์ที่ยืนยันตรงกับฐานข้อมูลแล้ว';
+        }
       }
       if (!data.sms_sent || isCurrentUserAdmin()) {
         document.getElementById('otpFallbackBox').style.display = modalOtpVal ? 'block' : 'none';
@@ -599,13 +706,15 @@ async function requestOtpCode() {
     document.getElementById('otpStep1').style.display = 'none';
     document.getElementById('otpStep2').style.display = 'block';
     startOtpCountdown('otpTimerText', true);
-    showSmsNotification(data.masked_phone || otpVerifiedPhone, data.demo_otp, data.ref_code);
+    showSmsNotification(targetDisplay, data.demo_otp, data.ref_code);
     document.getElementById('otpInputCode').focus();
   } catch (err) {
     alert('เกิดข้อผิดพลาด: ' + err.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = '📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP';
+    btn.textContent = otpSelectedChannel === 'email'
+      ? '📧 ยืนยันอีเมลและขอรหัส OTP'
+      : '📲 ยืนยันหมายเลขโทรศัพท์และขอรหัส OTP';
   }
 }
 
@@ -697,7 +806,7 @@ async function submitOtpReset() {
       return;
     }
 
-    alert(`✅ ยืนยัน OTP ผ่านหมายเลขโทรศัพท์และตั้งรหัสผ่านใหม่สำเร็จ!\n\nเลขประชาชน: ${otpCurrentIdno}\nรหัสผ่านใหม่: ${newPass}\n\nระบบได้กรอกรหัสผ่านใหม่ในช่องเข้าสู่ระบบให้เรียบร้อยแล้ว`);
+    alert(`✅ ยืนยันตัวตนด้วยรหัส OTP และตั้งรหัสผ่านใหม่สำเร็จ!\n\nเลขประชาชน: ${otpCurrentIdno}\nรหัสผ่านใหม่: ${newPass}\n\nระบบได้กรอกรหัสผ่านใหม่ในช่องเข้าสู่ระบบให้เรียบร้อยแล้ว`);
     document.getElementById('usnm').value = otpCurrentIdno;
     document.getElementById('pswd').value = newPass;
     closeOtpModal();
