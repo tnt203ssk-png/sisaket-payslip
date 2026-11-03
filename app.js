@@ -954,3 +954,210 @@ async function saveEmailGatewayConfig() {
 window.addEventListener('DOMContentLoaded', () => {
   loadLoginStats();
 });
+
+// ============================================================================
+// ระบบอัปเดตเบอร์โทรศัพท์และอีเมลในตาราง tbmain (จากตาราง sheet1 หรือไฟล์ Excel)
+// ============================================================================
+let parsedExcelContacts = [];
+
+function openUpdateContactsModal() {
+  const modal = document.getElementById('updateContactsModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+function closeUpdateContactsModal() {
+  const modal = document.getElementById('updateContactsModal');
+  if (modal) modal.style.display = 'none';
+}
+
+async function syncContactsFromSheet1() {
+  const btn = document.getElementById('btnSyncSheet1');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = 'กำลังอัปเดตข้อมูลจากตาราง sheet1 ลง tbmain...';
+  }
+  try {
+    const data = await apiPost({ action: 'sync_from_sheet1' });
+    if (data.success) {
+      alert('✅ ' + data.message);
+    } else {
+      alert(data.message || 'ไม่สามารถอัปเดตจากตาราง sheet1 ได้');
+    }
+  } catch (err) {
+    alert('เกิดข้อผิดพลาด: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 คลิกอัปเดตเบอร์โทร & อีเมล จากตาราง sheet1 ลง tbmain ทันที';
+    }
+  }
+}
+
+function normalizeExcelPhone(raw) {
+  let d = String(raw || '').trim().replace(/[^0-9]/g, '');
+  if (!d || d === '0') return '';
+  if (d.length === 9 && !d.startsWith('0')) d = '0' + d;
+  if (d.length === 11 && d.startsWith('66')) d = '0' + d.slice(2);
+  if (d.length > 10 && d.startsWith('0')) d = d.slice(0, 10);
+  return d.length >= 9 ? d : '';
+}
+
+function previewExcelContactsFile(e) {
+  const file = e.target.files && e.target.files[0];
+  if (!file) return;
+  if (typeof XLSX === 'undefined') {
+    alert('กำลังโหลดไลบรารีอ่านไฟล์ Excel กรุณารอสักครู่แล้วลองใหม่อีกครั้ง');
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = function (evt) {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheet = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheet];
+      const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: '' });
+
+      parsedExcelContacts = [];
+      let headerMap = { idno: -1, phone: -1, email: -1 };
+      let startRow = 0;
+
+      // ตรวจหาแถวหัวตาราง (Header Row)
+      for (let r = 0; r < Math.min(5, rows.length); r++) {
+        const row = rows[r];
+        for (let c = 0; c < row.length; c++) {
+          const h = String(row[c] || '').trim().toLowerCase();
+          if (h === 'idno' || h === 'cid' || h.includes('เลขบัตร') || h.includes('ประชาชน') || h.includes('13')) {
+            headerMap.idno = c;
+            startRow = r + 1;
+          } else if (h === 'tel2' || h === 'mbphone' || h === 'tel' || h === 'tel1' || h === 'phone' || h.includes('โทร')) {
+            if (headerMap.phone === -1 || h === 'tel2' || h === 'mbphone') headerMap.phone = c;
+            startRow = r + 1;
+          } else if (h === 'email' || h.includes('อีเมล') || h.includes('เมล')) {
+            headerMap.email = c;
+            startRow = r + 1;
+          }
+        }
+      }
+
+      for (let r = startRow; r < rows.length; r++) {
+        const row = rows[r];
+        if (!row || row.length === 0) continue;
+
+        let idno = '';
+        let phone = '';
+        let email = '';
+
+        if (headerMap.idno !== -1 && row[headerMap.idno] !== undefined) {
+          const cleanId = String(row[headerMap.idno]).replace(/[^0-9]/g, '');
+          if (cleanId.length === 13) idno = cleanId;
+        }
+        if (headerMap.phone !== -1 && row[headerMap.phone] !== undefined) {
+          phone = normalizeExcelPhone(row[headerMap.phone]);
+        }
+        if (headerMap.email !== -1 && row[headerMap.email] !== undefined) {
+          const em = String(row[headerMap.email]).trim();
+          if (em.includes('@')) email = em;
+        }
+
+        // Fallback auto-detect per cell if column headers weren't standard
+        for (let c = 0; c < row.length; c++) {
+          const val = String(row[c] || '').trim();
+          if (!val) continue;
+          const digits = val.replace(/[^0-9]/g, '');
+          if (!idno && digits.length === 13) {
+            idno = digits;
+          } else if (!email && val.includes('@') && val.includes('.')) {
+            email = val;
+          } else if (!phone && (digits.length === 9 || digits.length === 10)) {
+            const p = normalizeExcelPhone(digits);
+            if (p.startsWith('06') || p.startsWith('08') || p.startsWith('09') || p.startsWith('02') || p.startsWith('04')) {
+              phone = p;
+            }
+          }
+        }
+
+        if (idno && (phone || email)) {
+          parsedExcelContacts.push({ idno, mbphone: phone, email });
+        }
+      }
+
+      const sumEl = document.getElementById('excelContactsSummary');
+      const wrapEl = document.getElementById('excelContactsPreviewWrap');
+      const bodyEl = document.getElementById('excelContactsPreviewBody');
+
+      if (sumEl) {
+        sumEl.style.display = 'block';
+        sumEl.textContent = `✅ อ่านไฟล์ "${file.name}" สำเร็จ: พบข้อมูลเลข 13 หลักพร้อมเบอร์โทร/อีเมล จำนวน ${parsedExcelContacts.length} รายการ`;
+      }
+      if (bodyEl && wrapEl) {
+        bodyEl.innerHTML = parsedExcelContacts.slice(0, 50).map((item, idx) => `
+          <tr>
+            <td align="center">${idx + 1}</td>
+            <td align="center"><b>${item.idno}</b></td>
+            <td align="center" style="color:#1d4ed8;">${item.mbphone || '-'}</td>
+            <td align="left" style="color:#0f766e;">${item.email || '-'}</td>
+          </tr>
+        `).join('');
+        wrapEl.style.display = parsedExcelContacts.length > 0 ? 'block' : 'none';
+      }
+    } catch (err) {
+      alert('ไม่สามารถอ่านไฟล์ Excel ได้: ' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+async function uploadExcelContactsToTbmain() {
+  if (!parsedExcelContacts || parsedExcelContacts.length === 0) {
+    alert('กรุณาเลือกไฟล์ Excel (.xlsx, .xls, .csv) ที่มีข้อมูลเลข 13 หลักและเบอร์โทรศัพท์/อีเมลก่อนครับ');
+    return;
+  }
+
+  const btn = document.getElementById('btnUploadExcelContacts');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = `กำลังตรวจสอบเลข 13 หลักและอัปเดต ${parsedExcelContacts.length} รายการลง tbmain...`;
+  }
+
+  try {
+    // แบ่งส่งทีละชุด (Chunk) ชุดละ 200 รายการเพื่อความรวดเร็วและเสถียร
+    let totalMatched = 0;
+    let totalPhone = 0;
+    let totalEmail = 0;
+    let totalNotFound = 0;
+    const chunkSize = 200;
+
+    for (let i = 0; i < parsedExcelContacts.length; i += chunkSize) {
+      const chunk = parsedExcelContacts.slice(i, i + chunkSize);
+      const res = await apiPost({
+        action: 'sync_contacts_batch',
+        items: chunk
+      });
+      if (!res.success) {
+        throw new Error(res.message || 'อัปเดตข้อมูลไม่สำเร็จ');
+      }
+      totalMatched += Number(res.matched_count || 0);
+      totalPhone += Number(res.updated_phone || 0);
+      totalEmail += Number(res.updated_email || 0);
+      totalNotFound += Number(res.not_found || 0);
+    }
+
+    alert(
+      `✅ อัปเดตข้อมูลเบอร์โทรศัพท์และอีเมลในตาราง tbmain สำเร็จ!\n\n` +
+      `• จำนวนในไฟล์ Excel ทั้งหมด: ${parsedExcelContacts.length} รายการ\n` +
+      `• เลข 13 หลักตรงกับ tbmain: ${totalMatched} คน\n` +
+      `• อัปเดตเบอร์โทรศัพท์ (mbphone): ${totalPhone} คน\n` +
+      `• อัปเดตอีเมล (email): ${totalEmail} คน\n` +
+      `• ไม่พบเลข 13 หลักใน tbmain: ${totalNotFound} รายการ`
+    );
+  } catch (err) {
+    alert('เกิดข้อผิดพลาดในการอัปเดต: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🚀 ตรวจสอบเลข 13 หลักในฐาน tbmain และอัปเดตข้อมูลจากไฟล์ Excel';
+    }
+  }
+}

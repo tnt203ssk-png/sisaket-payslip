@@ -11,6 +11,7 @@
   <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.12.0/css/jquery.dataTables.css">
   <script type="text/javascript" charset="utf8" src="https://code.jquery.com/jquery-3.5.1.js"></script>
   <script type="text/javascript" charset="utf8" src="https://cdn.datatables.net/1.12.0/js/jquery.dataTables.js"></script>
+  <script type="text/javascript" src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
 
   <style>
     body {
@@ -201,7 +202,9 @@
                           <a onclick="openOtpModal('email')" class="forgot-link-btn" style="flex:1; min-width:135px; margin-top:0; background:#f0fdfa; border-color:#5eead4; color:#0f766e;">📧 ยืนยันด้วยอีเมล (Email)</a>
                         </div>
                         <div style="margin-top:6px;">
-                          <a href="javascript:void(0)" onclick="openEmailConfigModal()" style="font-size:11.5px; color:#0f766e; text-decoration:underline; font-weight:bold;">⚙️ ตั้งค่าระบบส่ง OTP เข้าอีเมล Gmail จริง (สำหรับผู้ดูแลระบบ)</a>
+                          <a href="javascript:void(0)" onclick="openUpdateContactsModal()" style="font-size:11.5px; color:#1e40af; text-decoration:underline; font-weight:bold;">📂 อัปเดตเบอร์โทร & อีเมลใน tbmain (ผ่านไฟล์ Excel / ตาราง sheet1)</a>
+                          &nbsp;|&nbsp;
+                          <a href="javascript:void(0)" onclick="openEmailConfigModal()" style="font-size:11.5px; color:#0f766e; text-decoration:underline; font-weight:bold;">⚙️ ตั้งค่าส่ง OTP อีเมล</a>
                         </div>
                       </td>
                     </tr>
@@ -262,7 +265,7 @@
       <tr>
         <td style="padding: 10px 18px 25px 18px;">
           <center>
-            <font size="-1" color="#CCCCCC" id="adminMenuTop">[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()">ตั้งค่าส่งอีเมล OTP</a> ]</font>
+            <font size="-1" color="#CCCCCC" id="adminMenuTop">[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> | <a href="javascript:void(0)" onclick="openUpdateContactsModal()">อัปเดตเบอร์โทร/อีเมล (Excel / sheet1)</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()">ตั้งค่าส่งอีเมล OTP</a> ]</font>
           </center>
           <table cellspacing="0" cellpadding="3" width="100%" border="0">
             <tr>
@@ -874,6 +877,65 @@
     </div>
   </div>
 
+  <!-- MODAL: อัปเดตข้อมูลเบอร์โทรศัพท์และอีเมลในตาราง tbmain (ผ่านไฟล์ Excel หรือ ตาราง sheet1) -->
+  <div id="updateContactsModal" class="modal-overlay">
+    <div class="modal-card" style="max-width:580px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #e2e8f0; padding-bottom:10px; margin-bottom:10px;">
+        <strong style="color:#1e40af; font-size:15px;">📂 อัปเดตเบอร์โทรศัพท์และอีเมลในตาราง tbmain (ตรวจสอบเลข 13 หลัก)</strong>
+        <button onclick="closeUpdateContactsModal()" style="border:none; background:#f1f5f9; padding:4px 10px; border-radius:4px; cursor:pointer; font-weight:bold;">✕</button>
+      </div>
+
+      <!-- ส่วนที่ 1: อัปเดตจากตาราง sheet1 ในฐานข้อมูล slip -->
+      <div style="background:#eff6ff; border:1px solid #93c5fd; padding:10px 12px; border-radius:6px; margin-bottom:12px;">
+        <div style="font-size:13px; font-weight:bold; color:#1e3a8a; margin-bottom:4px;">
+          🗄️ วิธีที่ 1: อัปเดตจากตาราง <code>sheet1</code> ในฐานข้อมูล <code>slip</code> (183.88.214.9)
+        </div>
+        <div style="font-size:12px; color:#334155; margin-bottom:8px;">
+          คำสั่ง: <code>UPDATE tbmain t INNER JOIN sheet1 s ON t.idno = s.cid SET t.mbphone = s.tel2</code>
+        </div>
+        <button type="button" id="btnSyncSheet1" onclick="syncContactsFromSheet1()" style="width:100%; padding:8px; background:#2563eb; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:13px;">
+          🔄 คลิกอัปเดตเบอร์โทร & อีเมล จากตาราง sheet1 ลง tbmain ทันที
+        </button>
+      </div>
+
+      <!-- ส่วนที่ 2: อัปเดตผ่านไฟล์ Excel (.xlsx / .xls / .csv) -->
+      <div style="background:#f0fdf4; border:1px solid #86efac; padding:10px 12px; border-radius:6px; margin-bottom:10px;">
+        <div style="font-size:13px; font-weight:bold; color:#166534; margin-bottom:6px;">
+          📊 วิธีที่ 2: อัปเดตผ่านไฟล์ Excel (<code>.xlsx</code>, <code>.xls</code>, <code>.csv</code>) โดยตรวจสอบเลข 13 หลักกับ <code>tbmain</code>
+        </div>
+        <div style="font-size:12px; color:#334155; margin-bottom:8px;">
+          รองรับไฟล์ที่มีคอลัมน์เลข 13 หลัก (เช่น <code>idno</code>, <code>cid</code>, เลขบัตร) คู่กับเบอร์โทรศัพท์ (<code>mbphone</code>, <code>tel2</code>, <code>tel</code>) และ/หรือ อีเมล (<code>email</code>)
+        </div>
+        <input type="file" id="excelContactsFile" accept=".xlsx,.xls,.csv" onchange="previewExcelContactsFile(event)" style="width:100%; padding:6px; background:#fff; border:1px solid #16a34a; border-radius:4px; font-size:12.5px; margin-bottom:8px;">
+
+        <div id="excelContactsSummary" style="font-size:12.5px; font-weight:bold; color:#15803d; margin-bottom:6px; display:none;"></div>
+        <div id="excelContactsPreviewWrap" style="display:none; max-height:170px; overflow-y:auto; background:#fff; border:1px solid #cbd5e1; border-radius:4px; margin-bottom:8px;">
+          <table width="100%" border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
+            <thead style="background:#f1f5f9;">
+              <tr>
+                <th>#</th>
+                <th>เลข 13 หลัก (idno/cid)</th>
+                <th>เบอร์โทรศัพท์ (mbphone)</th>
+                <th>อีเมล (email)</th>
+              </tr>
+            </thead>
+            <tbody id="excelContactsPreviewBody"></tbody>
+          </table>
+        </div>
+
+        <button type="button" id="btnUploadExcelContacts" onclick="uploadExcelContactsToTbmain()" style="width:100%; padding:9px; background:#16a34a; color:#fff; border:none; border-radius:5px; font-weight:bold; cursor:pointer; font-size:13.5px;">
+          🚀 ตรวจสอบเลข 13 หลักในฐาน tbmain และอัปเดตข้อมูลจากไฟล์ Excel
+        </button>
+      </div>
+
+      <div style="text-align:right;">
+        <button type="button" onclick="closeUpdateContactsModal()" style="padding:7px 16px; background:#e2e8f0; color:#334155; border:none; border-radius:5px; cursor:pointer; font-weight:bold;">
+          ปิดหน้าต่าง
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- แถบจำลองข้อความ SMS แจ้งเตือนเข้าหมายเลขโทรศัพท์ -->
   <div id="smsPushBanner" style="display:none; position:fixed; top:14px; right:14px; z-index:99999; max-width:390px; background:#0f172a; color:#f8fafc; border-left:5px solid #22c55e; border-radius:8px; padding:12px 14px; box-shadow:0 10px 25px rgba(0,0,0,0.4); font-family:Tahoma, sans-serif; font-size:13px; line-height:1.5;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
@@ -888,6 +950,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261101c"></script>
+  <script src="app.js?v=20261103a"></script>
 </BODY>
 </HTML>

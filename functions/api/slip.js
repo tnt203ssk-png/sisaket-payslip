@@ -1098,6 +1098,113 @@ export async function onRequest(context) {
       }), { headers: corsHeaders });
     }
 
+    // 8. Sync Phone & Email from table `sheet1` in database `slip` (UPDATE tbmain t SET t.mbphone = sheet1.tel2 WHERE t.idno = sheet1.cid)
+    if (action === 'sync_from_sheet1') {
+      const qCols = await db.query("SHOW COLUMNS FROM sheet1;");
+      const colNames = qCols.rows.map(c => String(c.Field || '').toLowerCase());
+      const hasEmailCol = colNames.includes('email');
+
+      const qMatch = await db.query(`
+        SELECT COUNT(*) AS cnt
+        FROM tbmain t
+        INNER JOIN sheet1 s ON TRIM(t.idno) COLLATE utf8_general_ci = TRIM(s.cid) COLLATE utf8_general_ci
+        WHERE s.tel2 IS NOT NULL AND TRIM(s.tel2) != '';
+      `);
+      const matchedCount = qMatch.rows.length > 0 ? Number(qMatch.rows[0].cnt) : 0;
+
+      const emailSetMain = hasEmailCol
+        ? ", t.email = CASE WHEN s.email IS NOT NULL AND TRIM(s.email) != '' THEN TRIM(s.email) ELSE t.email END"
+        : "";
+      const emailSetPerson = hasEmailCol
+        ? ", p.email = CASE WHEN s.email IS NOT NULL AND TRIM(s.email) != '' THEN TRIM(s.email) ELSE p.email END"
+        : "";
+
+      await db.query(`
+        UPDATE tbmain t
+        INNER JOIN sheet1 s ON TRIM(t.idno) COLLATE utf8_general_ci = TRIM(s.cid) COLLATE utf8_general_ci
+        SET t.mbphone = TRIM(s.tel2)${emailSetMain}
+        WHERE s.tel2 IS NOT NULL AND TRIM(s.tel2) != '';
+      `);
+
+      await db.query(`
+        UPDATE person p
+        INNER JOIN sheet1 s ON TRIM(p.idno) COLLATE utf8_general_ci = TRIM(s.cid) COLLATE utf8_general_ci
+        SET p.mbphone = TRIM(s.tel2)${emailSetPerson}
+        WHERE s.tel2 IS NOT NULL AND TRIM(s.tel2) != '';
+      `);
+
+      const qTotalPhone = await db.query("SELECT COUNT(*) AS cnt FROM tbmain WHERE mbphone IS NOT NULL AND TRIM(mbphone) != '' AND TRIM(mbphone) != '0';");
+      const totalWithPhone = qTotalPhone.rows.length > 0 ? Number(qTotalPhone.rows[0].cnt) : 0;
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        matched_count: matchedCount,
+        total_with_phone: totalWithPhone,
+        message: `อัปเดตข้อมูลจากตาราง sheet1 ลงตาราง tbmain (และ person) สำเร็จ! พบเลข 13 หลักตรงกัน ${matchedCount} รายการ (ปัจจุบันมีเบอร์โทรใน tbmain รวม ${totalWithPhone} คน)`
+      }), { headers: corsHeaders });
+    }
+
+    // 9. Batch Update Phone & Email in `tbmain` (and `person`) from Excel / CSV file by checking 13-digit ID (idno)
+    if (action === 'sync_contacts_batch') {
+      const items = Array.isArray(body.items) ? body.items : [];
+      if (items.length === 0) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'ไม่พบข้อมูลรายการสำหรับอัปเดต' }), { headers: corsHeaders });
+      }
+
+      // Fetch existing idno set from tbmain for fast verification
+      const qAllMain = await db.query("SELECT idno FROM tbmain;");
+      const existingIdnos = new Set(qAllMain.rows.map(r => String(r.idno || '').trim()));
+
+      let matchedCount = 0;
+      let updatedPhoneCount = 0;
+      let updatedEmailCount = 0;
+      let notFoundCount = 0;
+
+      for (const item of items) {
+        const idno = String(item.idno || '').replace(/[^0-9]/g, '').trim();
+        if (idno.length !== 13) continue;
+
+        if (!existingIdnos.has(idno)) {
+          notFoundCount++;
+          continue;
+        }
+
+        matchedCount++;
+        const cleanPhone = normPhone(item.mbphone || '');
+        const cleanEmail = String(item.email || '').trim();
+
+        const sets = [];
+        const pSets = [];
+        if (cleanPhone && cleanPhone.length >= 9) {
+          sets.push(`mbphone = ${sqlEsc(cleanPhone)}`);
+          pSets.push(`mbphone = ${sqlEsc(cleanPhone)}`);
+          updatedPhoneCount++;
+        }
+        if (cleanEmail && cleanEmail.includes('@')) {
+          sets.push(`email = ${sqlEsc(cleanEmail)}`);
+          pSets.push(`email = ${sqlEsc(cleanEmail)}`);
+          updatedEmailCount++;
+        }
+
+        if (sets.length > 0) {
+          await db.query(`UPDATE tbmain SET ${sets.join(', ')} WHERE idno = ${sqlEsc(idno)};`);
+          await db.query(`UPDATE person SET ${pSets.join(', ')} WHERE idno = ${sqlEsc(idno)};`);
+        }
+      }
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        matched_count: matchedCount,
+        updated_phone: updatedPhoneCount,
+        updated_email: updatedEmailCount,
+        not_found: notFoundCount,
+        message: `ตรวจสอบเลข 13 หลักและอัปเดตลง tbmain สำเร็จ!\n• ตรงกับฐาน tbmain: ${matchedCount} คน\n• อัปเดตเบอร์โทรศัพท์: ${updatedPhoneCount} คน\n• อัปเดตอีเมล: ${updatedEmailCount} คน\n• ไม่พบเลข 13 หลักใน tbmain: ${notFoundCount} รายการ`
+      }), { headers: corsHeaders });
+    }
+
     db.close();
     return new Response(JSON.stringify({ success: false, message: 'Unknown action: ' + action }), { headers: corsHeaders });
   } catch (err) {
