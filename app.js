@@ -237,19 +237,27 @@ function thaiBahtText(amountInput) {
   return result;
 }
 
+// Helper จัดรูปแบบชื่อ รพ.สต. จากตาราง person (hosp1, tam1, amp1)
+function formatHospLocation(obj) {
+  if (!obj) return '';
+  const h = String(obj.hosp1 || '').trim();
+  const t = String(obj.tam1 || '').trim();
+  const a = String(obj.amp1 || '').trim();
+  const parts = [];
+  if (h) parts.push(h);
+  if (t) parts.push(/^(ต\.|ตำบล)/.test(t) ? t : `ต.${t}`);
+  if (a) parts.push(/^(อ\.|อำเภอ)/.test(a) ? a : `อ.${a}`);
+  return parts.join(' ');
+}
+
 // เปิดดูใบรับรองการจ่ายเงินเดือนและเงินอื่น (viewmmCivil.php)
 async function openSlipDetail(nauto) {
   try {
-    const res = await fetch(API_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'slip_detail',
-        nauto,
-        idno: currentMember ? currentMember.idno : ''
-      })
+    const data = await apiPost({
+      action: 'slip_detail',
+      nauto,
+      idno: currentMember ? currentMember.idno : ''
     });
-    const data = await res.json();
     if (!data.success || !data.slip) {
       alert(data.message || 'ไม่พบข้อมูลสลิปเงินเดือน');
       return;
@@ -262,6 +270,17 @@ async function openSlipDetail(nauto) {
     document.getElementById('slipMonthYear').innerHTML = `${mName}&nbsp;ปี พ.ศ.${s.yy}`;
     document.getElementById('slipDayPay').textContent = s.daypay && s.daypay !== '0' ? s.daypay : '';
     document.getElementById('slipFullName').textContent = s.nname || (currentMember && currentMember.nname) || '-';
+
+    const posEl = document.getElementById('slipPosition');
+    if (posEl) {
+      posEl.textContent = s.nposit || (currentMember && currentMember.nposit) || '-';
+    }
+
+    const hospEl = document.getElementById('slipHospName');
+    if (hospEl) {
+      const hospText = formatHospLocation(s) || formatHospLocation(currentMember) || '-';
+      hospEl.textContent = hospText;
+    }
 
     const bankFull = `${s.bank_name || 'ธนาคารกรุงไทย จำกัด(มหาชน)'} ${s.bank_branch || 'สาขาศรีสะเกษ'}`;
     document.getElementById('slipBankName').textContent = bankFull;

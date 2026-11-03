@@ -575,10 +575,14 @@ export async function onRequest(context) {
                COALESCE(m.mbphone, '') AS mbphone, COALESCE(m.email, '') AS email, m.chn,
                COALESCE(o.noffice, 'องค์การบริหารส่วนจังหวัดศรีสะเกษ') AS office_name,
                COALESCE(b.namebank, 'ธนาคารกรุงไทย จำกัด(มหาชน)') AS bank_name,
-               COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch
+               COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch,
+               COALESCE(p.hosp1, '') AS hosp1,
+               COALESCE(p.tam1, '') AS tam1,
+               COALESCE(p.amp1, '') AS amp1
         FROM tbmain m
         LEFT JOIN tboffice o ON m.noffice = o.coff
         LEFT JOIN tbbank b ON LPAD(TRIM(m.cbank), 4, '0') = LPAD(TRIM(b.cbank), 4, '0')
+        LEFT JOIN person p ON TRIM(m.idno) COLLATE utf8_general_ci = TRIM(p.idno) COLLATE utf8_general_ci
         WHERE ${whereSql}
         LIMIT 1;
       `);
@@ -624,12 +628,16 @@ export async function onRequest(context) {
                m.nname, m.nposit, m.noffice, m.cbank,
                COALESCE(o.noffice, 'องค์การบริหารส่วนจังหวัดศรีสะเกษ') AS office_name,
                COALESCE(b.namebank, 'ธนาคารกรุงไทย จำกัด(มหาชน)') AS bank_name,
-               COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch
+               COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch,
+               COALESCE(p.hosp1, '') AS hosp1,
+               COALESCE(p.tam1, '') AS tam1,
+               COALESCE(p.amp1, '') AS amp1
         FROM tbdetail d
         LEFT JOIN tbmonth mt ON d.mm = mt.mm
         LEFT JOIN tbmain m ON d.idno = m.idno
         LEFT JOIN tboffice o ON m.noffice = o.coff
         LEFT JOIN tbbank b ON LPAD(TRIM(m.cbank), 4, '0') = LPAD(TRIM(b.cbank), 4, '0')
+        LEFT JOIN person p ON TRIM(d.idno) COLLATE utf8_general_ci = TRIM(p.idno) COLLATE utf8_general_ci
         WHERE ${whereClause}
         LIMIT 1;
       `);
