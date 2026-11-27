@@ -127,9 +127,9 @@ function populateMemberHeader() {
   const admTop = document.getElementById('adminMenuTop');
   if (admTop) {
     if (isCurrentUserAdmin()) {
-      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="openOtpModal()" style="color:#1e40af; font-weight:bold;">🛡️ Admin: ค้นหา/ดูรหัส OTP สมาชิก</a> ]';
+      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="openAdminData70Modal()" style="color:#15803d; font-weight:bold;">🗂️ จัดการฐานข้อมูลบุคลากร (data70)</a> | <a href="javascript:void(0)" onclick="openOtpModal()" style="color:#1e40af; font-weight:bold;">🛡️ Admin: ค้นหา/ดูรหัส OTP</a> | <a href="javascript:void(0)" onclick="openUpdateContactsModal()" style="color:#1d4ed8;">📂 อัปเดตเบอร์โทร/อีเมล</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()" style="color:#0f766e;">⚙️ ตั้งค่าอีเมล OTP</a> ]';
     } else {
-      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> ]';
+      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> | <a href="javascript:void(0)" onclick="openAdminData70Modal()">🗂️ จัดการฐานข้อมูลบุคลากร (data70)</a> ]';
     }
   }
 

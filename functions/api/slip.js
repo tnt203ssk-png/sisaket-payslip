@@ -501,6 +501,109 @@ function sqlEsc(val) {
   return "'" + String(val).replace(/\\/g, "\\\\").replace(/'/g, "''") + "'";
 }
 
+function sqlNum(val) {
+  if (val === null || val === undefined || val === '') return '0';
+  const cleaned = String(val).replace(/,/g, '').trim();
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? String(n) : '0';
+}
+
+const DATA70_CHANGE_COLS_DDL = Array.from({ length: 14 }, (_, idx) => {
+  const i = idx + 1;
+  return `
+    change_date_${i} VARCHAR(40) DEFAULT '',
+    change_pos_${i} VARCHAR(150) DEFAULT 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง',
+    change_level_${i} VARCHAR(100) DEFAULT 'ยังไม่ได้ปรับระดับ'`;
+}).join(',');
+
+async function ensureData70Table(db) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS personnel_data70 (
+      seq_no INT DEFAULT 0,
+      sml_seq INT DEFAULT 0,
+      hname VARCHAR(255) DEFAULT '',
+      sml_size VARCHAR(10) DEFAULT '',
+      cid VARCHAR(13) NOT NULL,
+      bank_account VARCHAR(50) DEFAULT '',
+      fullname VARCHAR(255) DEFAULT '',
+      birth_date VARCHAR(40) DEFAULT '',
+      transfer_date VARCHAR(40) DEFAULT '',
+      current_position VARCHAR(150) DEFAULT '',
+      current_level VARCHAR(100) DEFAULT '',
+      position_no VARCHAR(100) DEFAULT '',
+      edu_degree VARCHAR(150) DEFAULT '',
+      edu_major VARCHAR(255) DEFAULT '',
+      salary DECIMAL(12,2) DEFAULT 0,
+      allowance DECIMAL(12,2) DEFAULT 0,
+      position_allowance DECIMAL(12,2) DEFAULT 0,
+      pts_allowance DECIMAL(12,2) DEFAULT 0,
+      psr_allowance DECIMAL(12,2) DEFAULT 0,
+      house_rent DECIMAL(12,2) DEFAULT 0,
+      child_tuition DECIMAL(12,2) DEFAULT 0,
+      gpf_member VARCHAR(50) DEFAULT 'ไม่มี',
+      gpf_amount DECIMAL(12,2) DEFAULT 0,
+      ch11_allowance DECIMAL(12,2) DEFAULT 0,
+      total_income DECIMAL(12,2) DEFAULT 0,
+      coop_member VARCHAR(255) DEFAULT 'ไม่ได้เป็นสมาชิกสหกรณ์',
+      first_appoint_date VARCHAR(40) DEFAULT '',
+      first_position VARCHAR(150) DEFAULT '',
+      first_level VARCHAR(100) DEFAULT '',
+      ${DATA70_CHANGE_COLS_DDL},
+      phone VARCHAR(50) DEFAULT '',
+      email VARCHAR(150) DEFAULT '',
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (cid)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+  `);
+
+  // Seed default example row (นายธนโชติ ดวงตะวัน) if not exists
+  await db.query(`
+    INSERT IGNORE INTO personnel_data70 (
+      seq_no, sml_seq, hname, sml_size, cid, bank_account, fullname, birth_date, transfer_date,
+      current_position, current_level, position_no, edu_degree, edu_major,
+      salary, allowance, position_allowance, pts_allowance, psr_allowance, house_rent, child_tuition,
+      gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
+      first_appoint_date, first_position, first_level,
+      change_date_1, change_pos_1, change_level_1,
+      change_date_2, change_pos_2, change_level_2,
+      change_date_3, change_pos_3, change_level_3,
+      change_date_4, change_pos_4, change_level_4,
+      change_date_5, change_pos_5, change_level_5,
+      change_date_6, change_pos_6, change_level_6,
+      change_date_7, change_pos_7, change_level_7,
+      change_date_8, change_pos_8, change_level_8,
+      change_date_9, change_pos_9, change_level_9,
+      change_date_10, change_pos_10, change_level_10,
+      change_date_11, change_pos_11, change_level_11,
+      change_date_12, change_pos_12, change_level_12,
+      change_date_13, change_pos_13, change_level_13,
+      change_date_14, change_pos_14, change_level_14,
+      phone, email
+    ) VALUES (
+      1, 16, 'รพ.สต.บ้านหนองคู ต.จาน อ.เมืองศรีสะเกษ', 'M', '3330100466968', '3110728796', 'นายธนโชติ ดวงตะวัน', '2518-03-11', '2565-10-02',
+      'นักสาธารณสุข', 'ชำนาญการ', '5-5106-3617-123 (ถ)', 'ปริญญาตรี', 'ปริญญาตรี',
+      61460, 3500, 0, 1000, 0, 0, 0,
+      'มี', 1850, 2800, 70610, 'สหกรณ์ สสจ.ศรีสะเกษ',
+      '2538-06-01', 'เจ้าพนักงานสาธารณสุขชุมชน', '2',
+      '2541-06-01', 'เจ้าพนักงานสาธารณสุขชุมชน', '3',
+      '2544-04-01', 'เจ้าพนักงานสาธารณสุขชุมชน', '4',
+      '2546-04-01', 'เจ้าพนักงานสาธารณสุขชุมชน', '5',
+      '2548-04-01', 'เจ้าพนักงานสาธารณสุขชุมชน', '6',
+      '2550-05-18', 'เจ้าหน้าที่บริหารงานสาธารณสุข', '6',
+      '2551-12-11', 'นักวิชาการสาธารณสุข', 'ชำนาญการ',
+      '2568-01-02', 'นักสาธารณสุข', 'ชำนาญการ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '', 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง', 'ยังไม่ได้ปรับระดับ',
+      '086-461-3387', 'tnt203ssk@gmail.com'
+    );
+  `);
+}
+
 export async function onRequest(context) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -1210,6 +1313,406 @@ export async function onRequest(context) {
         updated_email: updatedEmailCount,
         not_found: notFoundCount,
         message: `ตรวจสอบเลข 13 หลักและอัปเดตลง tbmain สำเร็จ!\n• ตรงกับฐาน tbmain: ${matchedCount} คน\n• อัปเดตเบอร์โทรศัพท์: ${updatedPhoneCount} คน\n• อัปเดตอีเมล: ${updatedEmailCount} คน\n• ไม่พบเลข 13 หลักใน tbmain: ${notFoundCount} รายการ`
+      }), { headers: corsHeaders });
+    }
+
+    // ========================================================================
+    // 10. ระบบฐานข้อมูลบุคลากร (personnel_data70 - 72/73 คอลัมน์ตามชีต data70)
+    // ========================================================================
+    if (action === 'get_data70') {
+      await ensureData70Table(db);
+      const cid = String(body.cid || url.searchParams.get('cid') || '').replace(/[^0-9]/g, '').trim();
+      if (cid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'กรุณาระบุเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
+      }
+
+      const qD70 = await db.query(`SELECT * FROM personnel_data70 WHERE cid = ${sqlEsc(cid)} LIMIT 1;`);
+      const qMain = await db.query(`
+        SELECT m.idno, m.nname, m.nobank, m.nposit,
+               COALESCE(m.mbphone, '') AS mbphone, COALESCE(m.email, '') AS email,
+               COALESCE(p.hosp1, '') AS hosp1, COALESCE(p.tam1, '') AS tam1, COALESCE(p.amp1, '') AS amp1
+        FROM tbmain m
+        LEFT JOIN person p ON TRIM(m.idno) COLLATE utf8_general_ci = TRIM(p.idno) COLLATE utf8_general_ci
+        WHERE m.idno = ${sqlEsc(cid)}
+        LIMIT 1;
+      `);
+      const qSlip = await db.query(`
+        SELECT money1, money2, money3, money5, money8, money10, money12, exp6
+        FROM tbdetail
+        WHERE idno = ${sqlEsc(cid)}
+        ORDER BY CAST(yy AS UNSIGNED) DESC, CAST(mm AS UNSIGNED) DESC
+        LIMIT 1;
+      `);
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        exists: qD70.rows.length > 0,
+        record: qD70.rows.length > 0 ? qD70.rows[0] : null,
+        fallback_member: qMain.rows.length > 0 ? qMain.rows[0] : null,
+        fallback_slip: qSlip.rows.length > 0 ? qSlip.rows[0] : null
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'save_data70') {
+      await ensureData70Table(db);
+      const rec = body.record || body || {};
+      const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
+      if (cid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชนต้องมี 13 หลัก' }), { headers: corsHeaders });
+      }
+
+      let seqNo = Number(rec.seq_no || 0);
+      if (!seqNo || seqNo <= 0) {
+        const qExist = await db.query(`SELECT seq_no FROM personnel_data70 WHERE cid = ${sqlEsc(cid)} LIMIT 1;`);
+        if (qExist.rows.length > 0 && Number(qExist.rows[0].seq_no) > 0) {
+          seqNo = Number(qExist.rows[0].seq_no);
+        } else {
+          const qMax = await db.query("SELECT COALESCE(MAX(seq_no), 0) + 1 AS next_seq FROM personnel_data70;");
+          seqNo = Number(qMax.rows[0]?.next_seq || 1);
+        }
+      }
+
+      const smlSeq = Number(rec.sml_seq || 0) || 0;
+      const salary = Number(String(rec.salary || 0).replace(/,/g, '')) || 0;
+      const allowance = Number(String(rec.allowance || 0).replace(/,/g, '')) || 0;
+      const posAllowance = Number(String(rec.position_allowance || 0).replace(/,/g, '')) || 0;
+      const ptsAllowance = Number(String(rec.pts_allowance || 0).replace(/,/g, '')) || 0;
+      const psrAllowance = Number(String(rec.psr_allowance || 0).replace(/,/g, '')) || 0;
+      const houseRent = Number(String(rec.house_rent || 0).replace(/,/g, '')) || 0;
+      const childTuition = Number(String(rec.child_tuition || 0).replace(/,/g, '')) || 0;
+      const gpfAmount = Number(String(rec.gpf_amount || 0).replace(/,/g, '')) || 0;
+      const ch11Allowance = Number(String(rec.ch11_allowance || 0).replace(/,/g, '')) || 0;
+      const calcTotal = salary + allowance + posAllowance + ptsAllowance + psrAllowance + houseRent + childTuition + gpfAmount + ch11Allowance;
+      const totalIncome = rec.total_income !== undefined && rec.total_income !== ''
+        ? (Number(String(rec.total_income).replace(/,/g, '')) || calcTotal)
+        : calcTotal;
+
+      const changeCols = [];
+      const changeVals = [];
+      const changeUpds = [];
+      for (let i = 1; i <= 14; i++) {
+        const cDate = String(rec[`change_date_${i}`] || '').trim();
+        const cPos = String(rec[`change_pos_${i}`] || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง').trim() || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
+        const cLvl = String(rec[`change_level_${i}`] || 'ยังไม่ได้ปรับระดับ').trim() || 'ยังไม่ได้ปรับระดับ';
+        changeCols.push(`change_date_${i}`, `change_pos_${i}`, `change_level_${i}`);
+        changeVals.push(sqlEsc(cDate), sqlEsc(cPos), sqlEsc(cLvl));
+        changeUpds.push(
+          `change_date_${i} = VALUES(change_date_${i})`,
+          `change_pos_${i} = VALUES(change_pos_${i})`,
+          `change_level_${i} = VALUES(change_level_${i})`
+        );
+      }
+
+      const rawPhone = String(rec.phone || '').trim();
+      const rawEmail = String(rec.email || '').trim();
+
+      await db.query(`
+        INSERT INTO personnel_data70 (
+          seq_no, sml_seq, hname, sml_size, cid, bank_account, fullname, birth_date, transfer_date,
+          current_position, current_level, position_no, edu_degree, edu_major,
+          salary, allowance, position_allowance, pts_allowance, psr_allowance, house_rent, child_tuition,
+          gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
+          first_appoint_date, first_position, first_level,
+          ${changeCols.join(', ')},
+          phone, email
+        ) VALUES (
+          ${seqNo},
+          ${smlSeq},
+          ${sqlEsc(String(rec.hname || '').trim())},
+          ${sqlEsc(String(rec.sml_size || '').trim().toUpperCase())},
+          ${sqlEsc(cid)},
+          ${sqlEsc(String(rec.bank_account || '').trim())},
+          ${sqlEsc(String(rec.fullname || '').trim())},
+          ${sqlEsc(String(rec.birth_date || '').trim())},
+          ${sqlEsc(String(rec.transfer_date || '').trim())},
+          ${sqlEsc(String(rec.current_position || '').trim())},
+          ${sqlEsc(String(rec.current_level || '').trim())},
+          ${sqlEsc(String(rec.position_no || '').trim())},
+          ${sqlEsc(String(rec.edu_degree || '').trim())},
+          ${sqlEsc(String(rec.edu_major || '').trim())},
+          ${sqlNum(salary)},
+          ${sqlNum(allowance)},
+          ${sqlNum(posAllowance)},
+          ${sqlNum(ptsAllowance)},
+          ${sqlNum(psrAllowance)},
+          ${sqlNum(houseRent)},
+          ${sqlNum(childTuition)},
+          ${sqlEsc(String(rec.gpf_member || 'ไม่มี').trim())},
+          ${sqlNum(gpfAmount)},
+          ${sqlNum(ch11Allowance)},
+          ${sqlNum(totalIncome)},
+          ${sqlEsc(String(rec.coop_member || 'ไม่ได้เป็นสมาชิกสหกรณ์').trim())},
+          ${sqlEsc(String(rec.first_appoint_date || '').trim())},
+          ${sqlEsc(String(rec.first_position || '').trim())},
+          ${sqlEsc(String(rec.first_level || '').trim())},
+          ${changeVals.join(', ')},
+          ${sqlEsc(rawPhone)},
+          ${sqlEsc(rawEmail)}
+        )
+        ON DUPLICATE KEY UPDATE
+          seq_no = VALUES(seq_no),
+          sml_seq = VALUES(sml_seq),
+          hname = VALUES(hname),
+          sml_size = VALUES(sml_size),
+          bank_account = VALUES(bank_account),
+          fullname = VALUES(fullname),
+          birth_date = VALUES(birth_date),
+          transfer_date = VALUES(transfer_date),
+          current_position = VALUES(current_position),
+          current_level = VALUES(current_level),
+          position_no = VALUES(position_no),
+          edu_degree = VALUES(edu_degree),
+          edu_major = VALUES(edu_major),
+          salary = VALUES(salary),
+          allowance = VALUES(allowance),
+          position_allowance = VALUES(position_allowance),
+          pts_allowance = VALUES(pts_allowance),
+          psr_allowance = VALUES(psr_allowance),
+          house_rent = VALUES(house_rent),
+          child_tuition = VALUES(child_tuition),
+          gpf_member = VALUES(gpf_member),
+          gpf_amount = VALUES(gpf_amount),
+          ch11_allowance = VALUES(ch11_allowance),
+          total_income = VALUES(total_income),
+          coop_member = VALUES(coop_member),
+          first_appoint_date = VALUES(first_appoint_date),
+          first_position = VALUES(first_position),
+          first_level = VALUES(first_level),
+          ${changeUpds.join(', ')},
+          phone = VALUES(phone),
+          email = VALUES(email);
+      `);
+
+      // ซิงก์เบอร์โทรศัพท์และอีเมลกลับไปยังตาราง tbmain และ person
+      const normP = normPhone(rawPhone);
+      const tbMainUpdates = [];
+      const personUpdates = [];
+      if (normP && normP.length >= 9) {
+        tbMainUpdates.push(`mbphone = ${sqlEsc(normP)}`);
+        personUpdates.push(`mbphone = ${sqlEsc(normP)}`);
+      }
+      if (rawEmail) {
+        tbMainUpdates.push(`email = ${sqlEsc(rawEmail)}`);
+        personUpdates.push(`email = ${sqlEsc(rawEmail)}`);
+      }
+      if (tbMainUpdates.length > 0) {
+        await db.query(`UPDATE tbmain SET ${tbMainUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
+        await db.query(`UPDATE person SET ${personUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
+      }
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        cid,
+        seq_no: seqNo,
+        total_income: totalIncome,
+        message: 'บันทึกข้อมูลบุคลากร (data70) และซิงก์ข้อมูลเบอร์โทรศัพท์/อีเมลกับตาราง tbmain เรียบร้อยแล้ว!'
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'list_data70') {
+      await ensureData70Table(db);
+      const hname = String(body.hname || url.searchParams.get('hname') || '').trim();
+      const search = String(body.search || url.searchParams.get('search') || '').trim();
+
+      const conds = [];
+      if (hname) {
+        conds.push(`d.hname = ${sqlEsc(hname)}`);
+      }
+      if (search) {
+        const sLike = sqlEsc(`%${search}%`);
+        conds.push(`(d.cid LIKE ${sLike} OR d.fullname LIKE ${sLike} OR d.hname LIKE ${sLike} OR d.current_position LIKE ${sLike})`);
+      }
+      const whereSql = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
+
+      const qRows = await db.query(`
+        SELECT d.*
+        FROM personnel_data70 d
+        ${whereSql}
+        ORDER BY CASE WHEN d.seq_no > 0 THEN d.seq_no ELSE 999999 END ASC, d.sml_seq ASC, d.cid ASC;
+      `);
+
+      const qCountAll = await db.query("SELECT COUNT(*) AS cnt FROM personnel_data70;");
+      const qCountMain = await db.query("SELECT COUNT(*) AS cnt FROM tbmain;");
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        total_data70: Number(qCountAll.rows[0]?.cnt || 0),
+        total_tbmain: Number(qCountMain.rows[0]?.cnt || 0),
+        rows: qRows.rows
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'delete_data70') {
+      await ensureData70Table(db);
+      const cid = String(body.cid || '').replace(/[^0-9]/g, '').trim();
+      if (cid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'เลข 13 หลักไม่ถูกต้อง' }), { headers: corsHeaders });
+      }
+      await db.query(`DELETE FROM personnel_data70 WHERE cid = ${sqlEsc(cid)};`);
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        message: `ลบข้อมูลบุคลากรเลข 13 หลัก ${cid} ออกจากตาราง personnel_data70 เรียบร้อยแล้ว`
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'import_data70_batch') {
+      await ensureData70Table(db);
+      const items = Array.isArray(body.items) ? body.items : [];
+      if (items.length === 0) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'ไม่พบรายการข้อมูลสำหรับนำเข้า' }), { headers: corsHeaders });
+      }
+
+      let importedCount = 0;
+      let syncedMainCount = 0;
+
+      for (const rec of items) {
+        const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
+        if (cid.length !== 13) continue;
+
+        const seqNo = Number(rec.seq_no || 0) || (importedCount + 1);
+        const smlSeq = Number(rec.sml_seq || 0) || 0;
+        const salary = Number(String(rec.salary || 0).replace(/,/g, '')) || 0;
+        const allowance = Number(String(rec.allowance || 0).replace(/,/g, '')) || 0;
+        const posAllowance = Number(String(rec.position_allowance || 0).replace(/,/g, '')) || 0;
+        const ptsAllowance = Number(String(rec.pts_allowance || 0).replace(/,/g, '')) || 0;
+        const psrAllowance = Number(String(rec.psr_allowance || 0).replace(/,/g, '')) || 0;
+        const houseRent = Number(String(rec.house_rent || 0).replace(/,/g, '')) || 0;
+        const childTuition = Number(String(rec.child_tuition || 0).replace(/,/g, '')) || 0;
+        const gpfAmount = Number(String(rec.gpf_amount || 0).replace(/,/g, '')) || 0;
+        const ch11Allowance = Number(String(rec.ch11_allowance || 0).replace(/,/g, '')) || 0;
+        const calcTotal = salary + allowance + posAllowance + ptsAllowance + psrAllowance + houseRent + childTuition + gpfAmount + ch11Allowance;
+        const totalIncome = Number(String(rec.total_income || '').replace(/,/g, '')) || calcTotal;
+
+        const changeCols = [];
+        const changeVals = [];
+        const changeUpds = [];
+        for (let i = 1; i <= 14; i++) {
+          const cDate = String(rec[`change_date_${i}`] || '').trim();
+          const cPos = String(rec[`change_pos_${i}`] || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง').trim() || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
+          const cLvl = String(rec[`change_level_${i}`] || 'ยังไม่ได้ปรับระดับ').trim() || 'ยังไม่ได้ปรับระดับ';
+          changeCols.push(`change_date_${i}`, `change_pos_${i}`, `change_level_${i}`);
+          changeVals.push(sqlEsc(cDate), sqlEsc(cPos), sqlEsc(cLvl));
+          changeUpds.push(
+            `change_date_${i} = VALUES(change_date_${i})`,
+            `change_pos_${i} = VALUES(change_pos_${i})`,
+            `change_level_${i} = VALUES(change_level_${i})`
+          );
+        }
+
+        const rawPhone = String(rec.phone || '').trim();
+        const rawEmail = String(rec.email || '').trim();
+
+        await db.query(`
+          INSERT INTO personnel_data70 (
+            seq_no, sml_seq, hname, sml_size, cid, bank_account, fullname, birth_date, transfer_date,
+            current_position, current_level, position_no, edu_degree, edu_major,
+            salary, allowance, position_allowance, pts_allowance, psr_allowance, house_rent, child_tuition,
+            gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
+            first_appoint_date, first_position, first_level,
+            ${changeCols.join(', ')},
+            phone, email
+          ) VALUES (
+            ${seqNo},
+            ${smlSeq},
+            ${sqlEsc(String(rec.hname || '').trim())},
+            ${sqlEsc(String(rec.sml_size || '').trim().toUpperCase())},
+            ${sqlEsc(cid)},
+            ${sqlEsc(String(rec.bank_account || '').trim())},
+            ${sqlEsc(String(rec.fullname || '').trim())},
+            ${sqlEsc(String(rec.birth_date || '').trim())},
+            ${sqlEsc(String(rec.transfer_date || '').trim())},
+            ${sqlEsc(String(rec.current_position || '').trim())},
+            ${sqlEsc(String(rec.current_level || '').trim())},
+            ${sqlEsc(String(rec.position_no || '').trim())},
+            ${sqlEsc(String(rec.edu_degree || '').trim())},
+            ${sqlEsc(String(rec.edu_major || '').trim())},
+            ${sqlNum(salary)},
+            ${sqlNum(allowance)},
+            ${sqlNum(posAllowance)},
+            ${sqlNum(ptsAllowance)},
+            ${sqlNum(psrAllowance)},
+            ${sqlNum(houseRent)},
+            ${sqlNum(childTuition)},
+            ${sqlEsc(String(rec.gpf_member || 'ไม่มี').trim())},
+            ${sqlNum(gpfAmount)},
+            ${sqlNum(ch11Allowance)},
+            ${sqlNum(totalIncome)},
+            ${sqlEsc(String(rec.coop_member || 'ไม่ได้เป็นสมาชิกสหกรณ์').trim())},
+            ${sqlEsc(String(rec.first_appoint_date || '').trim())},
+            ${sqlEsc(String(rec.first_position || '').trim())},
+            ${sqlEsc(String(rec.first_level || '').trim())},
+            ${changeVals.join(', ')},
+            ${sqlEsc(rawPhone)},
+            ${sqlEsc(rawEmail)}
+          )
+          ON DUPLICATE KEY UPDATE
+            seq_no = VALUES(seq_no),
+            sml_seq = VALUES(sml_seq),
+            hname = VALUES(hname),
+            sml_size = VALUES(sml_size),
+            bank_account = VALUES(bank_account),
+            fullname = VALUES(fullname),
+            birth_date = VALUES(birth_date),
+            transfer_date = VALUES(transfer_date),
+            current_position = VALUES(current_position),
+            current_level = VALUES(current_level),
+            position_no = VALUES(position_no),
+            edu_degree = VALUES(edu_degree),
+            edu_major = VALUES(edu_major),
+            salary = VALUES(salary),
+            allowance = VALUES(allowance),
+            position_allowance = VALUES(position_allowance),
+            pts_allowance = VALUES(pts_allowance),
+            psr_allowance = VALUES(psr_allowance),
+            house_rent = VALUES(house_rent),
+            child_tuition = VALUES(child_tuition),
+            gpf_member = VALUES(gpf_member),
+            gpf_amount = VALUES(gpf_amount),
+            ch11_allowance = VALUES(ch11_allowance),
+            total_income = VALUES(total_income),
+            coop_member = VALUES(coop_member),
+            first_appoint_date = VALUES(first_appoint_date),
+            first_position = VALUES(first_position),
+            first_level = VALUES(first_level),
+            ${changeUpds.join(', ')},
+            phone = VALUES(phone),
+            email = VALUES(email);
+        `);
+
+        importedCount++;
+
+        const normP = normPhone(rawPhone);
+        const tbMainUpdates = [];
+        const personUpdates = [];
+        if (normP && normP.length >= 9) {
+          tbMainUpdates.push(`mbphone = ${sqlEsc(normP)}`);
+          personUpdates.push(`mbphone = ${sqlEsc(normP)}`);
+        }
+        if (rawEmail && rawEmail.includes('@')) {
+          tbMainUpdates.push(`email = ${sqlEsc(rawEmail)}`);
+          personUpdates.push(`email = ${sqlEsc(rawEmail)}`);
+        }
+        if (tbMainUpdates.length > 0) {
+          await db.query(`UPDATE tbmain SET ${tbMainUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
+          await db.query(`UPDATE person SET ${personUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
+          syncedMainCount++;
+        }
+      }
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        imported_count: importedCount,
+        synced_main_count: syncedMainCount,
+        message: `นำเข้าข้อมูลบุคลากร (data70) สำเร็จ ${importedCount} รายการ และซิงก์เบอร์โทร/อีเมลลง tbmain ${syncedMainCount} รายการ`
       }), { headers: corsHeaders });
     }
 
