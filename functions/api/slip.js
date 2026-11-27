@@ -516,6 +516,10 @@ const DATA70_CHANGE_COLS_DDL = Array.from({ length: 14 }, (_, idx) => {
     change_level_${i} VARCHAR(100) DEFAULT 'ยังไม่ได้ปรับระดับ'`;
 }).join(',');
 
+function normalizeSpaces(str) {
+  return String(str || '').trim().replace(/\s+/g, ' ');
+}
+
 async function ensureData70Table(db) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS personnel_data70 (
@@ -530,6 +534,7 @@ async function ensureData70Table(db) {
       transfer_date VARCHAR(40) DEFAULT '',
       current_position VARCHAR(150) DEFAULT '',
       current_level VARCHAR(100) DEFAULT '',
+      work_group VARCHAR(100) DEFAULT '',
       position_no VARCHAR(100) DEFAULT '',
       edu_degree VARCHAR(150) DEFAULT '',
       edu_major VARCHAR(255) DEFAULT '',
@@ -556,11 +561,17 @@ async function ensureData70Table(db) {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
   `);
 
+  // Auto-Migration: เพิ่มคอลัมน์ work_group ถัดจาก current_level หากตารางเดิมยังไม่มี
+  const qWgCol = await db.query("SHOW COLUMNS FROM personnel_data70 LIKE 'work_group';");
+  if (!qWgCol.rows || qWgCol.rows.length === 0) {
+    await db.query("ALTER TABLE personnel_data70 ADD COLUMN work_group VARCHAR(100) DEFAULT '' AFTER current_level;");
+  }
+
   // Seed default example row (นายธนโชติ ดวงตะวัน) if not exists
   await db.query(`
     INSERT IGNORE INTO personnel_data70 (
       seq_no, sml_seq, hname, sml_size, cid, bank_account, fullname, birth_date, transfer_date,
-      current_position, current_level, position_no, edu_degree, edu_major,
+      current_position, current_level, work_group, position_no, edu_degree, edu_major,
       salary, allowance, position_allowance, pts_allowance, psr_allowance, house_rent, child_tuition,
       gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
       first_appoint_date, first_position, first_level,
@@ -581,7 +592,7 @@ async function ensureData70Table(db) {
       phone, email
     ) VALUES (
       1, 16, 'รพ.สต.บ้านหนองคู ต.จาน อ.เมืองศรีสะเกษ', 'M', '3330100466968', '3110728796', 'นายธนโชติ ดวงตะวัน', '2518-03-11', '2565-10-02',
-      'นักสาธารณสุข', 'ชำนาญการ', '5-5106-3617-123 (ถ)', 'ปริญญาตรี', 'ปริญญาตรี',
+      'นักสาธารณสุข', 'ชำนาญการ', 'ผอ.รพ.สต.', '5-5106-3617-123 (ถ)', 'ปริญญาตรี', 'ปริญญาตรี',
       61460, 3500, 0, 1000, 0, 0, 0,
       'มี', 1850, 2800, 70610, 'สหกรณ์ สสจ.ศรีสะเกษ',
       '2538-06-01', 'เจ้าพนักงานสาธารณสุขชุมชน', '2',
@@ -602,6 +613,46 @@ async function ensureData70Table(db) {
       '086-461-3387', 'tnt203ssk@gmail.com'
     );
   `);
+
+  // อัปเดตค่าเริ่มต้นกลุ่มงานของ 3330100466968 หากยังว่างอยู่
+  await db.query("UPDATE personnel_data70 SET work_group = 'ผอ.รพ.สต.' WHERE cid = '3330100466968' AND (work_group IS NULL OR work_group = '');");
+}
+
+async function checkData70Duplicates(db, cid, fullname, positionNo) {
+  const cleanCid = String(cid || '').replace(/[^0-9]/g, '').trim();
+  const normName = normalizeSpaces(fullname);
+  const normPosNo = normalizeSpaces(positionNo);
+
+  let duplicateName = null;
+  let duplicatePosNo = null;
+
+  if (normName) {
+    const qDupName = await db.query(`
+      SELECT cid, fullname, hname, position_no
+      FROM personnel_data70
+      WHERE cid <> ${sqlEsc(cleanCid)}
+        AND TRIM(REPLACE(REPLACE(REPLACE(fullname, '   ', ' '), '  ', ' '), '  ', ' ')) = ${sqlEsc(normName)}
+      LIMIT 1;
+    `);
+    if (qDupName.rows && qDupName.rows.length > 0) {
+      duplicateName = qDupName.rows[0];
+    }
+  }
+
+  if (normPosNo && normPosNo !== '-' && normPosNo !== 'ไม่มี') {
+    const qDupPos = await db.query(`
+      SELECT cid, fullname, hname, position_no
+      FROM personnel_data70
+      WHERE cid <> ${sqlEsc(cleanCid)}
+        AND TRIM(position_no) = ${sqlEsc(normPosNo)}
+      LIMIT 1;
+    `);
+    if (qDupPos.rows && qDupPos.rows.length > 0) {
+      duplicatePosNo = qDupPos.rows[0];
+    }
+  }
+
+  return { duplicateName, duplicatePosNo };
 }
 
 export async function onRequest(context) {
@@ -1355,6 +1406,21 @@ export async function onRequest(context) {
       }), { headers: corsHeaders });
     }
 
+    if (action === 'check_data70_duplicate') {
+      await ensureData70Table(db);
+      const cid = String(body.cid || '').replace(/[^0-9]/g, '').trim();
+      const fullname = normalizeSpaces(body.fullname || '');
+      const positionNo = normalizeSpaces(body.position_no || '');
+
+      const { duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, fullname, positionNo);
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        duplicate_name: duplicateName,
+        duplicate_pos_no: duplicatePosNo
+      }), { headers: corsHeaders });
+    }
+
     if (action === 'save_data70') {
       await ensureData70Table(db);
       const rec = body.record || body || {};
@@ -1362,6 +1428,28 @@ export async function onRequest(context) {
       if (cid.length !== 13) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชนต้องมี 13 หลัก' }), { headers: corsHeaders });
+      }
+
+      const normFullname = normalizeSpaces(rec.fullname || '');
+      const normPositionNo = normalizeSpaces(rec.position_no || '');
+
+      // ตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ห้ามซ้ำกับคนอื่น (cid <> ปัจจุบัน)
+      const { duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, normFullname, normPositionNo);
+      if (duplicateName || duplicatePosNo) {
+        db.close();
+        const errMsgs = [];
+        if (duplicateName) {
+          errMsgs.push(`⚠️ พบชื่อ-สกุล "${normFullname}" ซ้ำกับรายชื่อที่มีอยู่แล้วในระบบ (เลข 13 หลัก: ${duplicateName.cid} | สังกัด: ${duplicateName.hname || '-'})`);
+        }
+        if (duplicatePosNo) {
+          errMsgs.push(`⚠️ เลขตำแหน่งปัจจุบัน "${normPositionNo}" ซ้ำกับ ${duplicatePosNo.fullname || '-'} (เลข 13 หลัก: ${duplicatePosNo.cid} | สังกัด: ${duplicatePosNo.hname || '-'})`);
+        }
+        return new Response(JSON.stringify({
+          success: false,
+          duplicate_name: duplicateName,
+          duplicate_pos_no: duplicatePosNo,
+          message: errMsgs.join('\n')
+        }), { headers: corsHeaders });
       }
 
       let seqNo = Number(rec.seq_no || 0);
@@ -1412,7 +1500,7 @@ export async function onRequest(context) {
       await db.query(`
         INSERT INTO personnel_data70 (
           seq_no, sml_seq, hname, sml_size, cid, bank_account, fullname, birth_date, transfer_date,
-          current_position, current_level, position_no, edu_degree, edu_major,
+          current_position, current_level, work_group, position_no, edu_degree, edu_major,
           salary, allowance, position_allowance, pts_allowance, psr_allowance, house_rent, child_tuition,
           gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
           first_appoint_date, first_position, first_level,
@@ -1425,12 +1513,13 @@ export async function onRequest(context) {
           ${sqlEsc(String(rec.sml_size || '').trim().toUpperCase())},
           ${sqlEsc(cid)},
           ${sqlEsc(String(rec.bank_account || '').trim())},
-          ${sqlEsc(String(rec.fullname || '').trim())},
+          ${sqlEsc(normFullname)},
           ${sqlEsc(String(rec.birth_date || '').trim())},
           ${sqlEsc(String(rec.transfer_date || '').trim())},
           ${sqlEsc(String(rec.current_position || '').trim())},
           ${sqlEsc(String(rec.current_level || '').trim())},
-          ${sqlEsc(String(rec.position_no || '').trim())},
+          ${sqlEsc(String(rec.work_group || '').trim())},
+          ${sqlEsc(normPositionNo)},
           ${sqlEsc(String(rec.edu_degree || '').trim())},
           ${sqlEsc(String(rec.edu_major || '').trim())},
           ${sqlNum(salary)},
@@ -1463,6 +1552,7 @@ export async function onRequest(context) {
           transfer_date = VALUES(transfer_date),
           current_position = VALUES(current_position),
           current_level = VALUES(current_level),
+          work_group = VALUES(work_group),
           position_no = VALUES(position_no),
           edu_degree = VALUES(edu_degree),
           edu_major = VALUES(edu_major),
@@ -1516,15 +1606,19 @@ export async function onRequest(context) {
     if (action === 'list_data70') {
       await ensureData70Table(db);
       const hname = String(body.hname || url.searchParams.get('hname') || '').trim();
+      const workGroup = String(body.work_group || url.searchParams.get('work_group') || '').trim();
       const search = String(body.search || url.searchParams.get('search') || '').trim();
 
       const conds = [];
       if (hname) {
         conds.push(`d.hname = ${sqlEsc(hname)}`);
       }
+      if (workGroup) {
+        conds.push(`d.work_group = ${sqlEsc(workGroup)}`);
+      }
       if (search) {
         const sLike = sqlEsc(`%${search}%`);
-        conds.push(`(d.cid LIKE ${sLike} OR d.fullname LIKE ${sLike} OR d.hname LIKE ${sLike} OR d.current_position LIKE ${sLike})`);
+        conds.push(`(d.cid LIKE ${sLike} OR d.fullname LIKE ${sLike} OR d.hname LIKE ${sLike} OR d.current_position LIKE ${sLike} OR d.work_group LIKE ${sLike} OR d.position_no LIKE ${sLike})`);
       }
       const whereSql = conds.length > 0 ? `WHERE ${conds.join(' AND ')}` : '';
 
@@ -1570,12 +1664,54 @@ export async function onRequest(context) {
         return new Response(JSON.stringify({ success: false, message: 'ไม่พบรายการข้อมูลสำหรับนำเข้า' }), { headers: corsHeaders });
       }
 
+      // โหลดข้อมูลเดิมทั้งหมดเพื่อตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น (cid ต่างกัน)
+      const qExisting = await db.query("SELECT cid, fullname, position_no, hname FROM personnel_data70;");
+      const nameToCidMap = new Map();
+      const posNoToCidMap = new Map();
+      for (const r of (qExisting.rows || [])) {
+        const eCid = String(r.cid || '').trim();
+        const eName = normalizeSpaces(r.fullname);
+        const ePosNo = normalizeSpaces(r.position_no);
+        if (eName) nameToCidMap.set(eName, { cid: eCid, fullname: eName, hname: r.hname || '' });
+        if (ePosNo && ePosNo !== '-' && ePosNo !== 'ไม่มี') {
+          posNoToCidMap.set(ePosNo, { cid: eCid, fullname: eName, hname: r.hname || '', position_no: ePosNo });
+        }
+      }
+
       let importedCount = 0;
       let syncedMainCount = 0;
+      const skippedDuplicates = [];
 
       for (const rec of items) {
         const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
         if (cid.length !== 13) continue;
+
+        const normFullname = normalizeSpaces(rec.fullname || '');
+        const normPositionNo = normalizeSpaces(rec.position_no || '');
+
+        // ตรวจสอบชื่อ-สกุลซ้ำกับเลข 13 หลักอื่น
+        if (normFullname && nameToCidMap.has(normFullname)) {
+          const owner = nameToCidMap.get(normFullname);
+          if (owner.cid !== cid) {
+            skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): ชื่อ-สกุลซ้ำกับเลข 13 หลัก ${owner.cid} (${owner.hname || '-'})`);
+            continue;
+          }
+        }
+
+        // ตรวจสอบเลขตำแหน่งปัจจุบันซ้ำกับเลข 13 หลักอื่น
+        if (normPositionNo && normPositionNo !== '-' && normPositionNo !== 'ไม่มี' && posNoToCidMap.has(normPositionNo)) {
+          const owner = posNoToCidMap.get(normPositionNo);
+          if (owner.cid !== cid) {
+            skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): เลขตำแหน่ง "${normPositionNo}" ซ้ำกับ ${owner.fullname} (${owner.cid})`);
+            continue;
+          }
+        }
+
+        // บันทึกลง Map สำหรับเช็กรายการถัดไปใน Batch เดียวกัน
+        if (normFullname) nameToCidMap.set(normFullname, { cid, fullname: normFullname, hname: rec.hname || '' });
+        if (normPositionNo && normPositionNo !== '-' && normPositionNo !== 'ไม่มี') {
+          posNoToCidMap.set(normPositionNo, { cid, fullname: normFullname, hname: rec.hname || '', position_no: normPositionNo });
+        }
 
         const seqNo = Number(rec.seq_no || 0) || (importedCount + 1);
         const smlSeq = Number(rec.sml_seq || 0) || 0;
@@ -1613,7 +1749,7 @@ export async function onRequest(context) {
         await db.query(`
           INSERT INTO personnel_data70 (
             seq_no, sml_seq, hname, sml_size, cid, bank_account, fullname, birth_date, transfer_date,
-            current_position, current_level, position_no, edu_degree, edu_major,
+            current_position, current_level, work_group, position_no, edu_degree, edu_major,
             salary, allowance, position_allowance, pts_allowance, psr_allowance, house_rent, child_tuition,
             gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
             first_appoint_date, first_position, first_level,
@@ -1626,12 +1762,13 @@ export async function onRequest(context) {
             ${sqlEsc(String(rec.sml_size || '').trim().toUpperCase())},
             ${sqlEsc(cid)},
             ${sqlEsc(String(rec.bank_account || '').trim())},
-            ${sqlEsc(String(rec.fullname || '').trim())},
+            ${sqlEsc(normFullname)},
             ${sqlEsc(String(rec.birth_date || '').trim())},
             ${sqlEsc(String(rec.transfer_date || '').trim())},
             ${sqlEsc(String(rec.current_position || '').trim())},
             ${sqlEsc(String(rec.current_level || '').trim())},
-            ${sqlEsc(String(rec.position_no || '').trim())},
+            ${sqlEsc(String(rec.work_group || '').trim())},
+            ${sqlEsc(normPositionNo)},
             ${sqlEsc(String(rec.edu_degree || '').trim())},
             ${sqlEsc(String(rec.edu_major || '').trim())},
             ${sqlNum(salary)},
@@ -1664,6 +1801,7 @@ export async function onRequest(context) {
             transfer_date = VALUES(transfer_date),
             current_position = VALUES(current_position),
             current_level = VALUES(current_level),
+            work_group = VALUES(work_group),
             position_no = VALUES(position_no),
             edu_degree = VALUES(edu_degree),
             edu_major = VALUES(edu_major),
@@ -1712,7 +1850,9 @@ export async function onRequest(context) {
         success: true,
         imported_count: importedCount,
         synced_main_count: syncedMainCount,
-        message: `นำเข้าข้อมูลบุคลากร (data70) สำเร็จ ${importedCount} รายการ และซิงก์เบอร์โทร/อีเมลลง tbmain ${syncedMainCount} รายการ`
+        skipped_duplicates: skippedDuplicates,
+        message: `นำเข้าข้อมูลบุคลากร (data70) สำเร็จ ${importedCount} รายการ และซิงก์เบอร์โทร/อีเมลลง tbmain ${syncedMainCount} รายการ` +
+          (skippedDuplicates.length > 0 ? `\n⚠️ ข้ามรายการที่ชื่อ-สกุลหรือเลขตำแหน่งซ้ำ ${skippedDuplicates.length} รายการ` : '')
       }), { headers: corsHeaders });
     }
 

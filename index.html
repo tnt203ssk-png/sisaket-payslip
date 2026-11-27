@@ -1025,8 +1025,9 @@
               <input type="text" id="d70_cid" maxlength="13" readonly style="width:100%; padding:7px; font-size:14px; font-family:Consolas, monospace; font-weight:bold; background:#e2e8f0; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
             </div>
             <div>
-              <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">ชื่อ-สกุล (พร้อมคำนำหน้า):</label>
-              <input type="text" id="d70_fullname" placeholder="เช่น นายธนโชติ ดวงตะวัน" required style="width:100%; padding:7px; font-size:14px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">ชื่อ-สกุล (พร้อมคำนำหน้า - ห้ามซ้ำคนอื่น):</label>
+              <input type="text" id="d70_fullname" oninput="scheduleD70DuplicateCheck('fullname')" onblur="triggerD70DuplicateCheck('fullname')" placeholder="เช่น นายธนโชติ ดวงตะวัน" required style="width:100%; padding:7px; font-size:14px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <div id="d70FullnameDupMsg" style="display:none; margin-top:4px; padding:4px 7px; border-radius:4px; background:#fef2f2; border:1px solid #fca5a5; color:#dc2626; font-size:11.5px; font-weight:bold; line-height:1.4;"></div>
             </div>
             <div>
               <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">วันเดือนปีเกิด (พ.ศ. YYYY-MM-DD):</label>
@@ -1041,16 +1042,21 @@
               <input type="email" id="d70_email" placeholder="เช่น name@gmail.com" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #0d9488; border-radius:4px; box-sizing:border-box;">
             </div>
             <div>
-              <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">เลขตำแหน่งปัจจุบัน:</label>
-              <input type="text" id="d70_position_no" placeholder="เช่น 5-5106-3617-123 (ถ)" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
-            </div>
-            <div>
               <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">ตำแหน่งปัจจุบัน:</label>
               <select id="d70_current_position" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;"></select>
             </div>
             <div>
               <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">ระดับปัจจุบัน:</label>
               <select id="d70_current_level" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;"></select>
+            </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:bold; color:#1e40af; display:block; margin-bottom:3px;">กลุ่มงาน:</label>
+              <select id="d70_work_group" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #2563eb; background:#eff6ff; font-weight:bold; color:#1e3a8a; border-radius:4px; box-sizing:border-box;"></select>
+            </div>
+            <div>
+              <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">เลขตำแหน่งปัจจุบัน (ห้ามซ้ำคนอื่น):</label>
+              <input type="text" id="d70_position_no" oninput="scheduleD70DuplicateCheck('position_no')" onblur="triggerD70DuplicateCheck('position_no')" placeholder="เช่น 5-5106-3617-123 (ถ)" style="width:100%; padding:7px; font-size:13.5px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <div id="d70PositionNoDupMsg" style="display:none; margin-top:4px; padding:4px 7px; border-radius:4px; background:#fef2f2; border:1px solid #fca5a5; color:#dc2626; font-size:11.5px; font-weight:bold; line-height:1.4;"></div>
             </div>
             <div>
               <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">วุฒิการศึกษาปัจจุบัน:</label>
@@ -1180,7 +1186,7 @@
         <!-- ปุ่มบันทึกด้านล่างฟอร์ม -->
         <div style="display:flex; justify-content:space-between; align-items:center; border-top:1px solid #cbd5e1; padding-top:12px; margin-top:14px; flex-wrap:wrap; gap:8px;">
           <div style="font-size:12px; color:#475569;">
-            * เมื่อกดบันทึก ระบบจะบันทึกข้อมูลทั้ง 72 คอลัมน์ลงตาราง <code>personnel_data70</code> และซิงก์เบอร์โทร/อีเมลกลับไปยัง <code>tbmain</code> อัตโนมัติ
+            * เมื่อกดบันทึก ระบบจะตรวจสอบชื่อ-สกุลและเลขตำแหน่งไม่ให้ซ้ำคนอื่น บันทึกข้อมูลทั้ง 73 คอลัมน์ลง <code>personnel_data70</code> และซิงก์เบอร์โทร/อีเมลกลับไปยัง <code>tbmain</code>
           </div>
           <div style="display:flex; gap:8px;">
             <button type="submit" id="btnSaveData70" style="padding:10px 20px; background:#16a34a; color:#fff; border:none; border-radius:6px; font-weight:bold; font-size:14px; cursor:pointer; box-shadow:0 2px 6px rgba(22,163,74,0.3);">
@@ -1199,10 +1205,10 @@
   <!-- MODAL: 🗂️ สำหรับ Admin จัดการฐานข้อมูลบุคลากร (data70) นำเข้า/ส่งออก Excel -->
   <!-- ==================================================================== -->
   <div id="adminData70Modal" class="modal-overlay" style="overflow-y:auto; align-items:flex-start; padding-top:18px; padding-bottom:18px;">
-    <div class="modal-card" style="width:1020px; max-width:98%; max-height:92vh; overflow-y:auto; padding:18px;">
+    <div class="modal-card" style="width:1080px; max-width:98%; max-height:92vh; overflow-y:auto; padding:18px;">
       <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #15803d; padding-bottom:10px; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
         <div>
-          <strong style="color:#15803d; font-size:16px;">🗂️ จัดการฐานข้อมูลบุคลากร (โครงสร้างชีต data70 - 72 คอลัมน์)</strong>
+          <strong style="color:#15803d; font-size:16px;">🗂️ จัดการฐานข้อมูลบุคลากร (โครงสร้างชีต data70 - 73 คอลัมน์ รวมกลุ่มงาน)</strong>
           <div id="admD70SummaryText" style="font-size:12.5px; color:#334155; margin-top:2px;">กำลังโหลดข้อมูล...</div>
         </div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
@@ -1223,7 +1229,7 @@
       <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:6px; padding:10px 12px; margin-bottom:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
           <div style="font-size:13px; color:#166534; font-weight:bold;">
-            📥 นำเข้าไฟล์ Excel / CSV ตามโครงสร้างชีต <code>data70</code> (รักษาเลข 13 หลักและเลขบัญชีไม่ให้เพี้ยนเป็น E+12):
+            📥 นำเข้าไฟล์ Excel / CSV ตามโครงสร้างชีต <code>data70</code> (73 คอลัมน์ รวมกลุ่มงาน พร้อมตรวจสอบชื่อ-สกุลและเลขตำแหน่งซ้ำ):
           </div>
           <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <input type="file" id="admD70ImportFile" accept=".xlsx,.xls,.csv" onchange="handleData70FileSelect(event)" style="font-size:12.5px; background:#fff; border:1px solid #16a34a; padding:4px 8px; border-radius:4px;">
@@ -1235,16 +1241,26 @@
         <div id="admD70ImportStatus" style="display:none; margin-top:6px; font-size:12.5px; color:#1e3a8a; background:#fff; padding:6px 10px; border-radius:4px; border:1px solid #bbf7d0;"></div>
       </div>
 
-      <!-- แถบค้นหาและกรองตาม รพ.สต. -->
-      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(240px, 1fr)); gap:8px; margin-bottom:10px;">
+      <!-- แถบค้นหาและกรองตาม รพ.สต. และ กลุ่มงาน -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(210px, 1fr)); gap:8px; margin-bottom:10px;">
         <div>
           <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:2px;">🏥 กรองตาม รพ.สต. (133 แห่ง):</label>
           <select id="admD70FilterHosp" onchange="loadAdminData70List()" style="width:100%; padding:7px; font-size:13px; border:1px solid #94a3b8; border-radius:4px;"></select>
         </div>
         <div>
-          <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:2px;">🔍 ค้นหาเลข 13 หลัก / ชื่อ-สกุล / ตำแหน่ง:</label>
+          <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:2px;">📂 กรองตามกลุ่มงาน:</label>
+          <select id="admD70FilterWorkGroup" onchange="loadAdminData70List()" style="width:100%; padding:7px; font-size:13px; border:1px solid #94a3b8; border-radius:4px;">
+            <option value="">-- ทุกกลุ่มงาน --</option>
+            <option value="ผอ.รพ.สต.">ผอ.รพ.สต.</option>
+            <option value="กลุ่มบริหารสาธารณสุข">กลุ่มบริหารสาธารณสุข</option>
+            <option value="กลุ่มส่งเสริมป้องกันควบคุมโรค">กลุ่มส่งเสริมป้องกันควบคุมโรค</option>
+            <option value="กลุ่มเวชปฏิบัติ">กลุ่มเวชปฏิบัติ</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px; font-weight:bold; display:block; margin-bottom:2px;">🔍 ค้นหาเลข 13 หลัก / ชื่อ-สกุล / เลขตำแหน่ง:</label>
           <div style="display:flex; gap:6px;">
-            <input type="text" id="admD70SearchInput" oninput="loadAdminData70List()" placeholder="พิมพ์เลข 13 หลัก หรือ ชื่อ-สกุล..." style="flex:1; padding:7px; font-size:13px; border:1px solid #94a3b8; border-radius:4px;">
+            <input type="text" id="admD70SearchInput" oninput="loadAdminData70List()" placeholder="พิมพ์เลข 13 หลัก, ชื่อ-สกุล, เลขตำแหน่ง..." style="flex:1; padding:7px; font-size:13px; border:1px solid #94a3b8; border-radius:4px;">
             <button type="button" onclick="loadAdminData70List()" style="background:#1e40af; color:#fff; border:none; padding:7px 14px; border-radius:4px; font-weight:bold; font-size:12.5px; cursor:pointer;">ค้นหา</button>
           </div>
         </div>
@@ -1255,15 +1271,17 @@
         <table width="100%" border="1" cellpadding="6" cellspacing="0" style="border-collapse:collapse; font-size:12.5px;">
           <thead style="background:#f1f5f9; position:sticky; top:0; z-index:2;">
             <tr>
-              <th width="45">ลำดับ</th>
-              <th width="70">ลำดับsml</th>
+              <th width="42">ลำดับ</th>
+              <th width="65">ลำดับsml</th>
               <th>ชื่อ รพ.สต.</th>
-              <th width="115">เลข 13 หลัก</th>
+              <th width="110">เลข 13 หลัก</th>
               <th>ชื่อ-สกุล</th>
               <th>ตำแหน่ง / ระดับปัจจุบัน</th>
-              <th width="90">เงินเดือน</th>
-              <th width="95">รวมรายรับ</th>
-              <th width="110">จัดการ</th>
+              <th>กลุ่มงาน</th>
+              <th>เลขตำแหน่ง</th>
+              <th width="85">เงินเดือน</th>
+              <th width="90">รวมรายรับ</th>
+              <th width="105">จัดการ</th>
             </tr>
           </thead>
           <tbody id="admD70TableBody"></tbody>
@@ -1286,7 +1304,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261127a"></script>
-  <script src="data70.js?v=20261127a"></script>
+  <script src="app.js?v=20261127b"></script>
+  <script src="data70.js?v=20261127b"></script>
 </BODY>
 </HTML>

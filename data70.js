@@ -262,7 +262,15 @@ const DATA70_COOPS = [
   "ไม่ได้เป็นสมาชิกสหกรณ์"
 ];
 
-// 6. โครงสร้างคอลัมน์มาตรฐานชีต data70 สำหรับ Import / Export Excel & CSV
+// 5.1 Master Data: รายการกลุ่มงาน (4 กลุ่มงานตามโครงสร้างไฟล์ข้อมูลเงินเดือน70 ล่าสุด)
+const DATA70_WORK_GROUPS = [
+  "ผอ.รพ.สต.",
+  "กลุ่มบริหารสาธารณสุข",
+  "กลุ่มส่งเสริมป้องกันควบคุมโรค",
+  "กลุ่มเวชปฏิบัติ"
+];
+
+// 6. โครงสร้างคอลัมน์มาตรฐานชีต data70 สำหรับ Import / Export Excel & CSV (73/74 คอลัมน์ รวมกลุ่มงาน)
 const DATA70_EXPORT_COLUMNS = [
   { key: "seq_no", header: "ลำดับ" },
   { key: "sml_seq", header: "ลำดับsml" },
@@ -275,6 +283,7 @@ const DATA70_EXPORT_COLUMNS = [
   { key: "transfer_date", header: "วันที่ย้ายมาสังกัดหรือบรรจุที่ อบจ.ศรีสะเกษ" },
   { key: "current_position", header: "ตำแหน่งปัจจุบัน" },
   { key: "current_level", header: "ระดับปัจจุบัน" },
+  { key: "work_group", header: "กลุ่มงาน" },
   { key: "position_no", header: "เลขตำแหน่งปัจจุบัน" },
   { key: "edu_degree", header: "วุฒิการศึกษาปัจจุบัน" },
   { key: "edu_major", header: "ชื่อวุฒิการศึกษาปัจจุบัน" },
@@ -311,6 +320,15 @@ let data70Initialized = false;
 let data70VisibleChangeSteps = 7;
 let adminData70List = [];
 let parsedImportData70Rows = [];
+let d70DupCheckTimer = null;
+let d70CurrentDuplicateState = {
+  duplicate_name: null,
+  duplicate_pos_no: null
+};
+
+function normalizeFullnameSpaces(str) {
+  return String(str || '').trim().replace(/\s+/g, ' ');
+}
 
 // แยกตำแหน่งและระดับจากข้อความรวมใน tbmain.nposit เช่น "นักสาธารณสุขชำนาญการ" -> { pos: "นักสาธารณสุข", lvl: "ชำนาญการ" }
 function splitPositionAndLevel(rawPosit) {
@@ -377,9 +395,10 @@ function initData70UI() {
     admHospFilter.innerHTML = html;
   }
 
-  // เติม Dropdown ตำแหน่ง ระดับ วุฒิ สหกรณ์
+  // เติม Dropdown ตำแหน่ง ระดับ กลุ่มงาน วุฒิ สหกรณ์
   populateSelectOptions(document.getElementById('d70_current_position'), DATA70_POSITIONS, '-- เลือกตำแหน่งปัจจุบัน --');
   populateSelectOptions(document.getElementById('d70_current_level'), DATA70_LEVELS, '-- เลือกระดับปัจจุบัน --');
+  populateSelectOptions(document.getElementById('d70_work_group'), DATA70_WORK_GROUPS, '-- เลือกกลุ่มงาน --');
   populateSelectOptions(document.getElementById('d70_edu_degree'), DATA70_EDU_DEGREES, '-- เลือกวุฒิการศึกษา --');
   populateSelectOptions(document.getElementById('d70_edu_major'), DATA70_EDU_MAJORS, '-- เลือกชื่อวุฒิการศึกษา --');
   populateSelectOptions(document.getElementById('d70_coop_member'), DATA70_COOPS, '-- เลือกสหกรณ์ออมทรัพย์ --');
@@ -582,6 +601,94 @@ function fmtNumInput(val) {
   return Number.isInteger(n) ? String(n) : String(Number(n.toFixed(2)));
 }
 
+// ============================================================================
+// ระบบตรวจสอบ "ชื่อ-สกุล" และ "เลขตำแหน่งปัจจุบัน" ไม่ให้ซ้ำกับคนอื่น (Real-time & onBlur)
+// ============================================================================
+function renderD70DuplicateState(dupName, dupPosNo) {
+  d70CurrentDuplicateState.duplicate_name = dupName || null;
+  d70CurrentDuplicateState.duplicate_pos_no = dupPosNo || null;
+
+  const nameInput = document.getElementById('d70_fullname');
+  const nameMsg = document.getElementById('d70FullnameDupMsg');
+  if (nameInput && nameMsg) {
+    if (dupName) {
+      nameInput.style.borderColor = '#dc2626';
+      nameInput.style.background = '#fef2f2';
+      nameMsg.style.display = 'block';
+      nameMsg.textContent = `⚠️ พบชื่อ-สกุลนี้ในระบบแล้ว (เลข 13 หลัก: ${dupName.cid} | สังกัด: ${dupName.hname || '-'})`;
+    } else {
+      nameInput.style.borderColor = '#94a3b8';
+      nameInput.style.background = '#ffffff';
+      nameMsg.style.display = 'none';
+      nameMsg.textContent = '';
+    }
+  }
+
+  const posInput = document.getElementById('d70_position_no');
+  const posMsg = document.getElementById('d70PositionNoDupMsg');
+  if (posInput && posMsg) {
+    if (dupPosNo) {
+      posInput.style.borderColor = '#dc2626';
+      posInput.style.background = '#fef2f2';
+      posMsg.style.display = 'block';
+      posMsg.textContent = `⚠️ เลขตำแหน่งนี้ซ้ำกับ ${dupPosNo.fullname || '-'} (${dupPosNo.hname || 'เลข 13 หลัก: ' + dupPosNo.cid})`;
+    } else {
+      posInput.style.borderColor = '#94a3b8';
+      posInput.style.background = '#ffffff';
+      posMsg.style.display = 'none';
+      posMsg.textContent = '';
+    }
+  }
+}
+
+function scheduleD70DuplicateCheck(fieldType) {
+  if (d70DupCheckTimer) clearTimeout(d70DupCheckTimer);
+  d70DupCheckTimer = setTimeout(() => {
+    triggerD70DuplicateCheck(fieldType);
+  }, 350);
+}
+
+async function triggerD70DuplicateCheck(fieldType) {
+  const cidEl = document.getElementById('d70_cid');
+  const nameEl = document.getElementById('d70_fullname');
+  const posEl = document.getElementById('d70_position_no');
+  if (!cidEl || !nameEl || !posEl) return { duplicate_name: null, duplicate_pos_no: null };
+
+  if (fieldType === 'fullname') {
+    // ตัดช่องว่างซ้ำตรงกลางออกเมื่อ onBlur
+    const cleaned = normalizeFullnameSpaces(nameEl.value);
+    if (document.activeElement !== nameEl && nameEl.value !== cleaned) {
+      nameEl.value = cleaned;
+    }
+  }
+
+  const cid = cidEl.value.replace(/[^0-9]/g, '').trim();
+  const fullname = normalizeFullnameSpaces(nameEl.value);
+  const position_no = normalizeFullnameSpaces(posEl.value);
+
+  if (!fullname && (!position_no || position_no === '-')) {
+    renderD70DuplicateState(null, null);
+    return { duplicate_name: null, duplicate_pos_no: null };
+  }
+
+  try {
+    const res = await apiPost({
+      action: 'check_data70_duplicate',
+      cid,
+      fullname,
+      position_no
+    });
+    if (res && res.success) {
+      renderD70DuplicateState(res.duplicate_name, res.duplicate_pos_no);
+      return {
+        duplicate_name: res.duplicate_name || null,
+        duplicate_pos_no: res.duplicate_pos_no || null
+      };
+    }
+  } catch (e) {}
+  return d70CurrentDuplicateState;
+}
+
 // เปิดหน้าต่าง Modal บันทึกและแก้ไขข้อมูลส่วนบุคคล (data70)
 async function openData70Modal(targetCid, isNewFromAdmin) {
   initData70UI();
@@ -648,6 +755,7 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
         transfer_date: '2565-10-02',
         current_position: splitPos.pos || '',
         current_level: splitPos.lvl || '',
+        work_group: '',
         position_no: '',
         edu_degree: 'ปริญญาตรี',
         edu_major: '',
@@ -698,6 +806,7 @@ function resetData70FormFields(cid) {
     transfer_date: '2565-10-02',
     current_position: '',
     current_level: '',
+    work_group: '',
     position_no: '',
     edu_degree: 'ปริญญาตรี',
     edu_major: '',
@@ -727,9 +836,10 @@ function resetData70FormFields(cid) {
 }
 
 function populateData70Form(r) {
+  renderD70DuplicateState(null, null);
   document.getElementById('d70_seq_no').value = r.seq_no || 0;
   document.getElementById('d70_cid').value = r.cid || '';
-  document.getElementById('d70_fullname').value = r.fullname || '';
+  document.getElementById('d70_fullname').value = normalizeFullnameSpaces(r.fullname || '');
   document.getElementById('d70_birth_date').value = r.birth_date || '';
   document.getElementById('d70_phone').value = r.phone || '';
   document.getElementById('d70_email').value = r.email || '';
@@ -746,6 +856,7 @@ function populateData70Form(r) {
 
   setSelectOrAddOption('d70_current_position', r.current_position || '');
   setSelectOrAddOption('d70_current_level', r.current_level || '');
+  setSelectOrAddOption('d70_work_group', r.work_group || '');
   setSelectOrAddOption('d70_edu_degree', r.edu_degree || '');
   setSelectOrAddOption('d70_edu_major', r.edu_major || '');
 
@@ -792,6 +903,11 @@ function closeData70Modal() {
 
 function collectData70FormRecord() {
   calcD70TotalIncome();
+  const normName = normalizeFullnameSpaces(document.getElementById('d70_fullname').value);
+  document.getElementById('d70_fullname').value = normName;
+  const normPosNo = normalizeFullnameSpaces(document.getElementById('d70_position_no').value);
+  document.getElementById('d70_position_no').value = normPosNo;
+
   const rec = {
     seq_no: Number(document.getElementById('d70_seq_no').value || 0),
     sml_seq: Number(document.getElementById('d70_sml_seq').value || 0),
@@ -799,12 +915,13 @@ function collectData70FormRecord() {
     sml_size: document.getElementById('d70_sml_size').value.trim().toUpperCase(),
     cid: document.getElementById('d70_cid').value.replace(/[^0-9]/g, '').trim(),
     bank_account: document.getElementById('d70_bank_account').value.trim(),
-    fullname: document.getElementById('d70_fullname').value.trim(),
+    fullname: normName,
     birth_date: document.getElementById('d70_birth_date').value.trim(),
     transfer_date: document.getElementById('d70_transfer_date').value.trim(),
     current_position: document.getElementById('d70_current_position').value.trim(),
     current_level: document.getElementById('d70_current_level').value.trim(),
-    position_no: document.getElementById('d70_position_no').value.trim(),
+    work_group: document.getElementById('d70_work_group') ? document.getElementById('d70_work_group').value.trim() : '',
+    position_no: normPosNo,
     edu_degree: document.getElementById('d70_edu_degree').value.trim(),
     edu_major: document.getElementById('d70_edu_major').value.trim(),
     salary: Number(document.getElementById('d70_salary').value || 0),
@@ -855,15 +972,34 @@ async function saveData70Form(e) {
   const btn = document.getElementById('btnSaveData70');
   if (btn) {
     btn.disabled = true;
-    btn.textContent = '⏳ กำลังบันทึกข้อมูล...';
+    btn.textContent = '⏳ กำลังตรวจสอบข้อมูลซ้ำและบันทึก...';
   }
 
   try {
+    // ตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่นก่อนบันทึก
+    const dupRes = await triggerD70DuplicateCheck('both');
+    if (dupRes && (dupRes.duplicate_name || dupRes.duplicate_pos_no)) {
+      switchData70Tab(1);
+      const msgs = [];
+      if (dupRes.duplicate_name) {
+        msgs.push(`⚠️ พบชื่อ-สกุล "${rec.fullname}" ในระบบแล้ว (เลข 13 หลัก: ${dupRes.duplicate_name.cid} | สังกัด: ${dupRes.duplicate_name.hname || '-'})`);
+      }
+      if (dupRes.duplicate_pos_no) {
+        msgs.push(`⚠️ เลขตำแหน่งปัจจุบัน "${rec.position_no}" ซ้ำกับ ${dupRes.duplicate_pos_no.fullname || '-'} (${dupRes.duplicate_pos_no.hname || dupRes.duplicate_pos_no.cid})`);
+      }
+      alert('ไม่สามารถบันทึกข้อมูลได้ เนื่องจากพบข้อมูลซ้ำกับบุคลากรอื่น:\n\n' + msgs.join('\n') + '\n\nกรุณาตรวจสอบและแก้ไขก่อนกดบันทึก');
+      return;
+    }
+
     const res = await apiPost({
       action: 'save_data70',
       record: rec
     });
     if (!res || !res.success) {
+      if (res && (res.duplicate_name || res.duplicate_pos_no)) {
+        renderD70DuplicateState(res.duplicate_name, res.duplicate_pos_no);
+        switchData70Tab(1);
+      }
       alert((res && res.message) || 'ไม่สามารถบันทึกข้อมูลได้');
       return;
     }
@@ -917,22 +1053,24 @@ function closeAdminData70Modal() {
 
 async function loadAdminData70List() {
   const hname = document.getElementById('admD70FilterHosp') ? document.getElementById('admD70FilterHosp').value : '';
+  const work_group = document.getElementById('admD70FilterWorkGroup') ? document.getElementById('admD70FilterWorkGroup').value : '';
   const search = document.getElementById('admD70SearchInput') ? document.getElementById('admD70SearchInput').value.trim() : '';
   const tbody = document.getElementById('admD70TableBody');
   const sumEl = document.getElementById('admD70SummaryText');
 
   if (tbody) {
-    tbody.innerHTML = '<tr><td colspan="9" align="center" style="padding:16px; color:#64748b;">⏳ กำลังโหลดข้อมูลบุคลากร (data70)...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" align="center" style="padding:16px; color:#64748b;">⏳ กำลังโหลดข้อมูลบุคลากร (data70)...</td></tr>';
   }
 
   try {
     const res = await apiPost({
       action: 'list_data70',
       hname,
+      work_group,
       search
     });
     if (!res || !res.success) {
-      if (tbody) tbody.innerHTML = `<tr><td colspan="9" align="center" style="color:#dc2626; padding:14px;">${(res && res.message) || 'โหลดข้อมูลไม่สำเร็จ'}</td></tr>`;
+      if (tbody) tbody.innerHTML = `<tr><td colspan="11" align="center" style="color:#dc2626; padding:14px;">${(res && res.message) || 'โหลดข้อมูลไม่สำเร็จ'}</td></tr>`;
       return;
     }
 
@@ -943,7 +1081,7 @@ async function loadAdminData70List() {
 
     if (!tbody) return;
     if (adminData70List.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="9" align="center" style="padding:16px; color:#64748b;">ไม่พบข้อมูลตามเงื่อนไขที่ค้นหา (สามารถกดปุ่ม "➕ เพิ่ม/ดึงข้อมูลจากเลข 13 หลัก" หรือ "📥 นำเข้าไฟล์ Excel (data70)" ได้)</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" align="center" style="padding:16px; color:#64748b;">ไม่พบข้อมูลตามเงื่อนไขที่ค้นหา (สามารถกดปุ่ม "➕ เพิ่ม/แก้ไขบุคลากรจากเลข 13 หลัก" หรือ "📥 นำเข้าไฟล์ Excel (data70)" ได้)</td></tr>';
       return;
     }
 
@@ -958,6 +1096,8 @@ async function loadAdminData70List() {
           <td align="center" style="font-family:Consolas, monospace; font-weight:bold; color:#1e3a8a;">${r.cid}</td>
           <td align="left"><b>${r.fullname || '-'}</b></td>
           <td align="left">${r.current_position || '-'} ${r.current_level || ''}</td>
+          <td align="center"><span style="background:#eff6ff; color:#1e40af; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:11.5px;">${r.work_group || '-'}</span></td>
+          <td align="center" style="font-size:12px;">${r.position_no || '-'}</td>
           <td align="right">${salNum}</td>
           <td align="right" style="color:#15803d; font-weight:bold;">${incomeNum}</td>
           <td align="center" style="white-space:nowrap;">
@@ -968,7 +1108,7 @@ async function loadAdminData70List() {
       `;
     }).join('');
   } catch (err) {
-    if (tbody) tbody.innerHTML = `<tr><td colspan="9" align="center" style="color:#dc2626; padding:14px;">เกิดข้อผิดพลาด: ${err.message}</td></tr>`;
+    if (tbody) tbody.innerHTML = `<tr><td colspan="11" align="center" style="color:#dc2626; padding:14px;">เกิดข้อผิดพลาด: ${err.message}</td></tr>`;
   }
 }
 
@@ -1032,8 +1172,10 @@ function exportData70Excel() {
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // บังคับคอลัมน์ 13หลัก (index 4), เลขบัญชี (index 5), หมายเลขโทรศัพท์ (index 71) ให้เป็นชนิด String ('s') เพื่อป้องกัน E+12
-  const textColIndices = [4, 5, 71];
+  // บังคับคอลัมน์ที่เป็น isText (13หลัก, เลขบัญชี, หมายเลขโทรศัพท์) ให้เป็นชนิด String ('s') เพื่อป้องกัน E+12
+  const textColIndices = DATA70_EXPORT_COLUMNS
+    .map((col, idx) => (col.isText ? idx : -1))
+    .filter(idx => idx >= 0);
   for (let r = 1; r < aoa.length; r++) {
     for (const cIdx of textColIndices) {
       const cellRef = XLSX.utils.encode_cell({ r, c: cIdx });
@@ -1127,15 +1269,33 @@ function handleData70FileSelect(e) {
 
       parsedImportData70Rows = [];
       let startRow = 1;
+      let hasWorkGroupCol = true; // โครงสร้างใหม่มี "กลุ่มงาน" ที่คอลัมน์ index 11 (หลังระดับปัจจุบัน)
 
       // ค้นหาแถว Header ที่มีคำว่า "13หลัก" หรือ "ชื่อ-สกุล" หรือ "ลำดับsml"
       for (let r = 0; r < Math.min(10, rows.length); r++) {
-        const rowStr = (rows[r] || []).join(' ');
+        const rowCells = (rows[r] || []).map(c => String(c || '').trim());
+        const rowStr = rowCells.join(' ');
         if (rowStr.includes('13หลัก') || rowStr.includes('ลำดับsml') || rowStr.includes('ชื่อ-สกุล')) {
           startRow = r + 1;
+          hasWorkGroupCol = rowCells.some(c => c.includes('กลุ่มงาน'));
           break;
         }
       }
+
+      // เตรียม Map ตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น
+      const seenNameMap = new Map();
+      const seenPosNoMap = new Map();
+      for (const ex of (adminData70List || [])) {
+        const eCid = String(ex.cid || '').trim();
+        const eName = normalizeFullnameSpaces(ex.fullname);
+        const ePos = normalizeFullnameSpaces(ex.position_no);
+        if (eName) seenNameMap.set(eName, { cid: eCid, fullname: eName, hname: ex.hname || '' });
+        if (ePos && ePos !== '-' && ePos !== 'ไม่มี') {
+          seenPosNoMap.set(ePos, { cid: eCid, fullname: eName, hname: ex.hname || '', position_no: ePos });
+        }
+      }
+
+      const duplicateWarnings = [];
 
       for (let r = startRow; r < rows.length; r++) {
         const row = rows[r];
@@ -1147,6 +1307,34 @@ function handleData70FileSelect(e) {
 
         const hname = cleanExcelTextValue(row[2]);
         const matchedHosp = DATA70_HOSPITALS.find(h => h.hname === hname);
+        const shift = hasWorkGroupCol ? 1 : 0;
+
+        const normFullname = normalizeFullnameSpaces(cleanExcelTextValue(row[6]));
+        const workGroupVal = hasWorkGroupCol ? cleanExcelTextValue(row[11]) : '';
+        const normPosNo = normalizeFullnameSpaces(cleanExcelTextValue(row[11 + shift]));
+
+        // ตรวจสอบชื่อ-สกุลซ้ำกับเลข 13 หลักอื่น
+        if (normFullname && seenNameMap.has(normFullname)) {
+          const owner = seenNameMap.get(normFullname);
+          if (owner.cid !== cid) {
+            duplicateWarnings.push(`แถวที่ ${r + 1}: ชื่อ-สกุล "${normFullname}" (${cid}) ซ้ำกับเลข 13 หลัก ${owner.cid} (${owner.hname || '-'})`);
+            continue;
+          }
+        }
+
+        // ตรวจสอบเลขตำแหน่งปัจจุบันซ้ำกับเลข 13 หลักอื่น
+        if (normPosNo && normPosNo !== '-' && normPosNo !== 'ไม่มี' && seenPosNoMap.has(normPosNo)) {
+          const owner = seenPosNoMap.get(normPosNo);
+          if (owner.cid !== cid) {
+            duplicateWarnings.push(`แถวที่ ${r + 1}: เลขตำแหน่ง "${normPosNo}" ของ ${normFullname} (${cid}) ซ้ำกับ ${owner.fullname} (${owner.cid})`);
+            continue;
+          }
+        }
+
+        if (normFullname) seenNameMap.set(normFullname, { cid, fullname: normFullname, hname });
+        if (normPosNo && normPosNo !== '-' && normPosNo !== 'ไม่มี') {
+          seenPosNoMap.set(normPosNo, { cid, fullname: normFullname, hname, position_no: normPosNo });
+        }
 
         const rec = {
           seq_no: Number(cleanExcelTextValue(row[0])) || (parsedImportData70Rows.length + 1),
@@ -1155,40 +1343,41 @@ function handleData70FileSelect(e) {
           sml_size: cleanExcelTextValue(row[3]).toUpperCase() || (matchedHosp ? matchedHosp.sml_size : ''),
           cid: cid,
           bank_account: cleanExcelTextValue(row[5]).replace(/[^0-9]/g, '') || cleanExcelTextValue(row[5]),
-          fullname: cleanExcelTextValue(row[6]),
+          fullname: normFullname,
           birth_date: cleanExcelTextValue(row[7]),
           transfer_date: cleanExcelTextValue(row[8]),
           current_position: cleanExcelTextValue(row[9]),
           current_level: cleanExcelTextValue(row[10]),
-          position_no: cleanExcelTextValue(row[11]),
-          edu_degree: cleanExcelTextValue(row[12]),
-          edu_major: cleanExcelTextValue(row[13]),
-          salary: Number(cleanExcelTextValue(row[14]).replace(/,/g, '')) || 0,
-          allowance: Number(cleanExcelTextValue(row[15]).replace(/,/g, '')) || 0,
-          position_allowance: Number(cleanExcelTextValue(row[16]).replace(/,/g, '')) || 0,
-          pts_allowance: Number(cleanExcelTextValue(row[17]).replace(/,/g, '')) || 0,
-          psr_allowance: Number(cleanExcelTextValue(row[18]).replace(/,/g, '')) || 0,
-          house_rent: Number(cleanExcelTextValue(row[19]).replace(/,/g, '')) || 0,
-          child_tuition: Number(cleanExcelTextValue(row[20]).replace(/,/g, '')) || 0,
-          gpf_member: cleanExcelTextValue(row[21]) || 'ไม่มี',
-          gpf_amount: Number(cleanExcelTextValue(row[22]).replace(/,/g, '')) || 0,
-          ch11_allowance: Number(cleanExcelTextValue(row[23]).replace(/,/g, '')) || 0,
-          total_income: Number(cleanExcelTextValue(row[24]).replace(/,/g, '')) || 0,
-          coop_member: cleanExcelTextValue(row[25]) || 'ไม่ได้เป็นสมาชิกสหกรณ์',
-          first_appoint_date: cleanExcelTextValue(row[26]),
-          first_position: cleanExcelTextValue(row[27]),
-          first_level: cleanExcelTextValue(row[28])
+          work_group: workGroupVal,
+          position_no: normPosNo,
+          edu_degree: cleanExcelTextValue(row[12 + shift]),
+          edu_major: cleanExcelTextValue(row[13 + shift]),
+          salary: Number(cleanExcelTextValue(row[14 + shift]).replace(/,/g, '')) || 0,
+          allowance: Number(cleanExcelTextValue(row[15 + shift]).replace(/,/g, '')) || 0,
+          position_allowance: Number(cleanExcelTextValue(row[16 + shift]).replace(/,/g, '')) || 0,
+          pts_allowance: Number(cleanExcelTextValue(row[17 + shift]).replace(/,/g, '')) || 0,
+          psr_allowance: Number(cleanExcelTextValue(row[18 + shift]).replace(/,/g, '')) || 0,
+          house_rent: Number(cleanExcelTextValue(row[19 + shift]).replace(/,/g, '')) || 0,
+          child_tuition: Number(cleanExcelTextValue(row[20 + shift]).replace(/,/g, '')) || 0,
+          gpf_member: cleanExcelTextValue(row[21 + shift]) || 'ไม่มี',
+          gpf_amount: Number(cleanExcelTextValue(row[22 + shift]).replace(/,/g, '')) || 0,
+          ch11_allowance: Number(cleanExcelTextValue(row[23 + shift]).replace(/,/g, '')) || 0,
+          total_income: Number(cleanExcelTextValue(row[24 + shift]).replace(/,/g, '')) || 0,
+          coop_member: cleanExcelTextValue(row[25 + shift]) || 'ไม่ได้เป็นสมาชิกสหกรณ์',
+          first_appoint_date: cleanExcelTextValue(row[26 + shift]),
+          first_position: cleanExcelTextValue(row[27 + shift]),
+          first_level: cleanExcelTextValue(row[28 + shift])
         };
 
         for (let i = 1; i <= 14; i++) {
-          const baseIdx = 29 + (i - 1) * 3;
+          const baseIdx = (29 + shift) + (i - 1) * 3;
           rec[`change_date_${i}`] = cleanExcelTextValue(row[baseIdx]);
           rec[`change_pos_${i}`] = cleanExcelTextValue(row[baseIdx + 1]) || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
           rec[`change_level_${i}`] = cleanExcelTextValue(row[baseIdx + 2]) || 'ยังไม่ได้ปรับระดับ';
         }
 
-        rec.phone = cleanExcelTextValue(row[71]);
-        rec.email = cleanExcelTextValue(row[72]);
+        rec.phone = cleanExcelTextValue(row[71 + shift]);
+        rec.email = cleanExcelTextValue(row[72 + shift]);
 
         parsedImportData70Rows.push(rec);
       }
@@ -1197,7 +1386,14 @@ function handleData70FileSelect(e) {
       const btnConfirm = document.getElementById('btnConfirmImportD70');
       if (infoEl) {
         infoEl.style.display = 'block';
-        infoEl.innerHTML = `✅ อ่านไฟล์ <b>"${file.name}"</b> (ชีต <code>${sheetName}</code>) สำเร็จ: พบข้อมูลบุคลากรที่มีเลข 13 หลักถูกต้อง จำนวน <b>${parsedImportData70Rows.length}</b> รายการ`;
+        let html = `✅ อ่านไฟล์ <b>"${file.name}"</b> (ชีต <code>${sheetName}</code>) สำเร็จ: พบข้อมูลบุคลากรที่พร้อมนำเข้า จำนวน <b>${parsedImportData70Rows.length}</b> รายการ`;
+        if (duplicateWarnings.length > 0) {
+          html += `<div style="margin-top:6px; padding:6px 8px; background:#fef2f2; border:1px solid #fca5a5; border-radius:4px; color:#dc2626; font-size:12px;">
+            <b>⚠️ พบรายการที่มี ชื่อ-สกุล หรือ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น (${duplicateWarnings.length} รายการ ระบบได้ตัดออกจากการนำเข้า):</b><br>
+            ${duplicateWarnings.slice(0, 10).map(w => `• ${w}`).join('<br>')}
+          </div>`;
+        }
+        infoEl.innerHTML = html;
       }
       if (btnConfirm) {
         btnConfirm.style.display = parsedImportData70Rows.length > 0 ? 'inline-block' : 'none';
