@@ -1004,10 +1004,26 @@ async function saveData70Form(e) {
       return;
     }
 
-    // อัปเดต currentMember ในหน้าเว็บด้วยหากเป็นคนเดียวกับที่ล็อกอินอยู่
-    if (typeof currentMember !== 'undefined' && currentMember && currentMember.idno === rec.cid) {
+    // อัปเดต currentMember ในหน้าเว็บทันทีหากเป็นเลข 13 หลักเดียวกับที่ล็อกอินอยู่ (ไม่ต้อง Logout แล้ว Login ใหม่)
+    if (typeof currentMember !== 'undefined' && currentMember && String(currentMember.idno).trim() === rec.cid) {
+      const sm = res.synced_member || {};
+      const combinedPos = sm.nposit || (rec.current_position
+        ? (rec.current_level && rec.current_level !== 'ยังไม่ได้เลื่อนระดับ' && rec.current_level !== 'ยังไม่ได้ปรับระดับ'
+            ? `${rec.current_position} ${rec.current_level}`.trim()
+            : rec.current_position)
+        : currentMember.nposit);
+
+      if (rec.fullname) currentMember.nname = sm.nname || rec.fullname;
+      if (combinedPos) currentMember.nposit = combinedPos;
+      if (rec.hname) {
+        currentMember.d70_hname = rec.hname;
+        currentMember.hname = rec.hname;
+      }
+      if (rec.bank_account) currentMember.nobank = rec.bank_account;
       if (rec.phone) currentMember.mbphone = rec.phone.replace(/[^0-9]/g, '');
       if (rec.email) currentMember.email = rec.email;
+      if (rec.work_group !== undefined) currentMember.work_group = rec.work_group;
+      if (rec.position_no !== undefined) currentMember.position_no = rec.position_no;
       if (typeof populateMemberHeader === 'function') populateMemberHeader();
     }
 

@@ -140,6 +140,19 @@ function populateMemberHeader() {
   const chpEmailEl = document.getElementById('chpEmail');
   if (chpPhoneEl) chpPhoneEl.value = (currentMember.mbphone && currentMember.mbphone !== '0') ? currentMember.mbphone : '';
   if (chpEmailEl) chpEmailEl.value = currentMember.email || '';
+
+  // อัปเดตข้อมูลหัวรายงานใบรับรองการจ่ายเงินเดือน (#view-slip) ทันทีเมื่อข้อมูลผู้ใช้เปลี่ยน
+  const slipNameEl = document.getElementById('slipFullName');
+  if (slipNameEl && currentMember.nname) slipNameEl.textContent = currentMember.nname;
+  const slipPosEl = document.getElementById('slipPosition');
+  if (slipPosEl && currentMember.nposit) slipPosEl.textContent = currentMember.nposit;
+  const slipHospEl = document.getElementById('slipHospName');
+  if (slipHospEl) {
+    const hTxt = formatHospLocation(currentMember);
+    if (hTxt) slipHospEl.textContent = hTxt;
+  }
+  const slipBankNoEl = document.getElementById('slipBankNo');
+  if (slipBankNoEl && currentMember.nobank) slipBankNoEl.textContent = currentMember.nobank;
 }
 
 function renderMonthsTable() {
@@ -237,9 +250,12 @@ function thaiBahtText(amountInput) {
   return result;
 }
 
-// Helper จัดรูปแบบชื่อ รพ.สต. จากตาราง person (hosp1, tam1, amp1)
+// Helper จัดรูปแบบชื่อ รพ.สต. โดยดึงจาก personnel_data70 (d70_hname / hname) เป็นอันดับแรก หากไม่มีจึงใช้จากตาราง person (hosp1, tam1, amp1)
 function formatHospLocation(obj) {
   if (!obj) return '';
+  const d70Hname = String(obj.d70_hname || obj.hname || '').trim();
+  if (d70Hname) return d70Hname;
+
   const h = String(obj.hosp1 || '').trim();
   const t = String(obj.tam1 || '').trim();
   const a = String(obj.amp1 || '').trim();

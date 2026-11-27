@@ -655,6 +655,89 @@ async function checkData70Duplicates(db, cid, fullname, positionNo) {
   return { duplicateName, duplicatePosNo };
 }
 
+// Helper จัดรูปแบบตำแหน่ง+ระดับ และแยกชื่อ รพ.สต. ตำบล อำเภอ เพื่อซิงก์ลง tbmain, person, tbdetail
+function buildFullPosition(pos, lvl) {
+  const p = normalizeSpaces(pos);
+  const l = normalizeSpaces(lvl);
+  if (!p) return l;
+  if (!l || l === 'ยังไม่ได้เลื่อนระดับ' || l === 'ยังไม่ได้ปรับระดับ') return p;
+  if (p.endsWith(l)) return p;
+  return `${p} ${l}`;
+}
+
+function splitHnameParts(hname) {
+  const full = normalizeSpaces(hname);
+  if (!full) return { hosp1: '', tam1: '', amp1: '' };
+  const m = full.match(/^(.*?)\s+(ต\.\S+|ตำบล\S+)\s+(อ\.\S+|อำเภอ\S+)$/);
+  if (m) {
+    return {
+      hosp1: m[1].trim(),
+      tam1: m[2].trim(),
+      amp1: m[3].trim()
+    };
+  }
+  return { hosp1: full, tam1: '', amp1: '' };
+}
+
+async function syncData70ToLegacyTables(db, rec, normP) {
+  const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
+  if (cid.length !== 13) return false;
+
+  const normFullname = normalizeSpaces(rec.fullname || '');
+  const fullPos = buildFullPosition(rec.current_position, rec.current_level);
+  const bankAcc = String(rec.bank_account || '').trim();
+  const rawEmail = String(rec.email || '').trim();
+  const hname = normalizeSpaces(rec.hname || '');
+  const { hosp1, tam1, amp1 } = splitHnameParts(hname);
+
+  // 1. อัปเดตตาราง tbmain (เทียบเลข 13 หลัก idno = cid)
+  const tbMainSets = [];
+  if (normFullname) tbMainSets.push(`nname = ${sqlEsc(normFullname)}`);
+  if (fullPos) tbMainSets.push(`nposit = ${sqlEsc(fullPos)}`);
+  if (bankAcc) tbMainSets.push(`nobank = ${sqlEsc(bankAcc)}`);
+  if (normP && normP.length >= 9) tbMainSets.push(`mbphone = ${sqlEsc(normP)}`);
+  if (rawEmail) tbMainSets.push(`email = ${sqlEsc(rawEmail)}`);
+
+  if (tbMainSets.length > 0) {
+    await db.query(`
+      UPDATE tbmain
+      SET ${tbMainSets.join(', ')}
+      WHERE TRIM(idno) COLLATE utf8_general_ci = ${sqlEsc(cid)} COLLATE utf8_general_ci;
+    `);
+  }
+
+  // 2. อัปเดตตาราง person (ชื่อ รพ.สต. hosp1, tam1, amp1, เบอร์โทร, อีเมล)
+  const personSets = [];
+  if (hosp1) personSets.push(`hosp1 = ${sqlEsc(hosp1)}`);
+  if (tam1) personSets.push(`tam1 = ${sqlEsc(tam1)}`);
+  if (amp1) personSets.push(`amp1 = ${sqlEsc(amp1)}`);
+  if (normP && normP.length >= 9) personSets.push(`mbphone = ${sqlEsc(normP)}`);
+  if (rawEmail) personSets.push(`email = ${sqlEsc(rawEmail)}`);
+
+  if (personSets.length > 0) {
+    try {
+      await db.query(`
+        UPDATE person
+        SET ${personSets.join(', ')}
+        WHERE TRIM(idno) COLLATE utf8_general_ci = ${sqlEsc(cid)} COLLATE utf8_general_ci;
+      `);
+    } catch {}
+  }
+
+  // 3. อัปเดตเลขที่บัญชีในตาราง tbdetail ของเลข 13 หลักนั้น
+  if (bankAcc) {
+    try {
+      await db.query(`
+        UPDATE tbdetail
+        SET nobank = ${sqlEsc(bankAcc)}
+        WHERE TRIM(idno) COLLATE utf8_general_ci = ${sqlEsc(cid)} COLLATE utf8_general_ci;
+      `);
+    } catch {}
+  }
+
+  return true;
+}
+
 export async function onRequest(context) {
   const corsHeaders = {
     'Access-Control-Allow-Origin': '*',
@@ -724,12 +807,36 @@ export async function onRequest(context) {
         ? `m.idno = ${sqlEsc(idno)}`
         : `m.idno = ${sqlEsc(idno)} AND m.passc = ${sqlEsc(pass)}`;
 
+      await ensureData70Table(db);
+
       const qMember = await db.query(`
-        SELECT m.noman, m.nname, m.nobank, m.idno, m.nposit, m.noffice, m.passc, m.cbank,
-               COALESCE(m.mbphone, '') AS mbphone, COALESCE(m.email, '') AS email, m.chn,
+        SELECT m.noman,
+               COALESCE(NULLIF(TRIM(d70.fullname), ''), m.nname) AS nname,
+               COALESCE(NULLIF(TRIM(d70.bank_account), ''), m.nobank) AS nobank,
+               m.idno,
+               CASE
+                 WHEN d70.current_position IS NOT NULL AND TRIM(d70.current_position) <> ''
+                 THEN TRIM(CONCAT(
+                   TRIM(d70.current_position),
+                   CASE
+                     WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
+                          AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                     THEN CONCAT(' ', TRIM(d70.current_level))
+                     ELSE ''
+                   END
+                 ))
+                 ELSE m.nposit
+               END AS nposit,
+               m.noffice, m.passc, m.cbank,
+               COALESCE(NULLIF(TRIM(d70.phone), ''), COALESCE(m.mbphone, '')) AS mbphone,
+               COALESCE(NULLIF(TRIM(d70.email), ''), COALESCE(m.email, '')) AS email,
+               m.chn,
                COALESCE(o.noffice, 'องค์การบริหารส่วนจังหวัดศรีสะเกษ') AS office_name,
                COALESCE(b.namebank, 'ธนาคารกรุงไทย จำกัด(มหาชน)') AS bank_name,
                COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch,
+               COALESCE(NULLIF(TRIM(d70.hname), ''), '') AS d70_hname,
+               COALESCE(NULLIF(TRIM(d70.work_group), ''), '') AS work_group,
+               COALESCE(NULLIF(TRIM(d70.position_no), ''), '') AS position_no,
                COALESCE(p.hosp1, '') AS hosp1,
                COALESCE(p.tam1, '') AS tam1,
                COALESCE(p.amp1, '') AS amp1
@@ -737,6 +844,7 @@ export async function onRequest(context) {
         LEFT JOIN tboffice o ON m.noffice = o.coff
         LEFT JOIN tbbank b ON LPAD(TRIM(m.cbank), 4, '0') = LPAD(TRIM(b.cbank), 4, '0')
         LEFT JOIN person p ON TRIM(m.idno) COLLATE utf8_general_ci = TRIM(p.idno) COLLATE utf8_general_ci
+        LEFT JOIN personnel_data70 d70 ON TRIM(m.idno) COLLATE utf8_general_ci = TRIM(d70.cid) COLLATE utf8_general_ci
         WHERE ${whereSql}
         LIMIT 1;
       `);
@@ -777,12 +885,32 @@ export async function onRequest(context) {
         whereClause += ` AND d.idno = ${sqlEsc(idno)}`;
       }
 
+      await ensureData70Table(db);
+
       const qDetail = await db.query(`
         SELECT d.*, COALESCE(mt.nmonth, '') AS month_name,
-               m.nname, m.nposit, m.noffice, m.cbank,
+               COALESCE(NULLIF(TRIM(d70.fullname), ''), m.nname) AS nname,
+               CASE
+                 WHEN d70.current_position IS NOT NULL AND TRIM(d70.current_position) <> ''
+                 THEN TRIM(CONCAT(
+                   TRIM(d70.current_position),
+                   CASE
+                     WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
+                          AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                     THEN CONCAT(' ', TRIM(d70.current_level))
+                     ELSE ''
+                   END
+                 ))
+                 ELSE m.nposit
+               END AS nposit,
+               COALESCE(NULLIF(TRIM(d70.bank_account), ''), NULLIF(TRIM(m.nobank), ''), d.nobank) AS nobank,
+               m.noffice, m.cbank,
                COALESCE(o.noffice, 'องค์การบริหารส่วนจังหวัดศรีสะเกษ') AS office_name,
                COALESCE(b.namebank, 'ธนาคารกรุงไทย จำกัด(มหาชน)') AS bank_name,
                COALESCE(b.sakhabank, 'สาขาศรีสะเกษ') AS bank_branch,
+               COALESCE(NULLIF(TRIM(d70.hname), ''), '') AS d70_hname,
+               COALESCE(NULLIF(TRIM(d70.work_group), ''), '') AS work_group,
+               COALESCE(NULLIF(TRIM(d70.position_no), ''), '') AS position_no,
                COALESCE(p.hosp1, '') AS hosp1,
                COALESCE(p.tam1, '') AS tam1,
                COALESCE(p.amp1, '') AS amp1
@@ -792,6 +920,7 @@ export async function onRequest(context) {
         LEFT JOIN tboffice o ON m.noffice = o.coff
         LEFT JOIN tbbank b ON LPAD(TRIM(m.cbank), 4, '0') = LPAD(TRIM(b.cbank), 4, '0')
         LEFT JOIN person p ON TRIM(d.idno) COLLATE utf8_general_ci = TRIM(p.idno) COLLATE utf8_general_ci
+        LEFT JOIN personnel_data70 d70 ON TRIM(d.idno) COLLATE utf8_general_ci = TRIM(d70.cid) COLLATE utf8_general_ci
         WHERE ${whereClause}
         LIMIT 1;
       `);
@@ -1576,22 +1705,16 @@ export async function onRequest(context) {
           email = VALUES(email);
       `);
 
-      // ซิงก์เบอร์โทรศัพท์และอีเมลกลับไปยังตาราง tbmain และ person
+      // ซิงก์ข้อมูลบุคลากร (ชื่อ-สกุล, ตำแหน่ง+ระดับ, ชื่อ รพ.สต., เลขบัญชี, เบอร์โทร, อีเมล) กลับไปยัง tbmain, person, tbdetail โดยเทียบเลข 13 หลัก
       const normP = normPhone(rawPhone);
-      const tbMainUpdates = [];
-      const personUpdates = [];
-      if (normP && normP.length >= 9) {
-        tbMainUpdates.push(`mbphone = ${sqlEsc(normP)}`);
-        personUpdates.push(`mbphone = ${sqlEsc(normP)}`);
-      }
-      if (rawEmail) {
-        tbMainUpdates.push(`email = ${sqlEsc(rawEmail)}`);
-        personUpdates.push(`email = ${sqlEsc(rawEmail)}`);
-      }
-      if (tbMainUpdates.length > 0) {
-        await db.query(`UPDATE tbmain SET ${tbMainUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
-        await db.query(`UPDATE person SET ${personUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
-      }
+      await syncData70ToLegacyTables(db, {
+        ...rec,
+        cid,
+        fullname: normFullname,
+        position_no: normPositionNo
+      }, normP);
+
+      const syncedFullPos = buildFullPosition(rec.current_position, rec.current_level);
 
       db.close();
       return new Response(JSON.stringify({
@@ -1599,7 +1722,18 @@ export async function onRequest(context) {
         cid,
         seq_no: seqNo,
         total_income: totalIncome,
-        message: 'บันทึกข้อมูลบุคลากร (data70) และซิงก์ข้อมูลเบอร์โทรศัพท์/อีเมลกับตาราง tbmain เรียบร้อยแล้ว!'
+        synced_member: {
+          idno: cid,
+          nname: normFullname,
+          nposit: syncedFullPos,
+          d70_hname: normalizeSpaces(rec.hname || ''),
+          nobank: String(rec.bank_account || '').trim(),
+          mbphone: normP || rawPhone,
+          email: rawEmail,
+          work_group: String(rec.work_group || '').trim(),
+          position_no: normPositionNo
+        },
+        message: 'บันทึกข้อมูลบุคลากร (data70) และซิงก์ชื่อ-สกุล ตำแหน่ง รพ.สต. เลขบัญชี เบอร์โทร/อีเมล กับตารางใบแจ้งเงินเดือน (tbmain / tbdetail) เรียบร้อยแล้ว!'
       }), { headers: corsHeaders });
     }
 
@@ -1828,21 +1962,13 @@ export async function onRequest(context) {
         importedCount++;
 
         const normP = normPhone(rawPhone);
-        const tbMainUpdates = [];
-        const personUpdates = [];
-        if (normP && normP.length >= 9) {
-          tbMainUpdates.push(`mbphone = ${sqlEsc(normP)}`);
-          personUpdates.push(`mbphone = ${sqlEsc(normP)}`);
-        }
-        if (rawEmail && rawEmail.includes('@')) {
-          tbMainUpdates.push(`email = ${sqlEsc(rawEmail)}`);
-          personUpdates.push(`email = ${sqlEsc(rawEmail)}`);
-        }
-        if (tbMainUpdates.length > 0) {
-          await db.query(`UPDATE tbmain SET ${tbMainUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
-          await db.query(`UPDATE person SET ${personUpdates.join(', ')} WHERE idno = ${sqlEsc(cid)};`);
-          syncedMainCount++;
-        }
+        const didSync = await syncData70ToLegacyTables(db, {
+          ...rec,
+          cid,
+          fullname: normFullname,
+          position_no: normPositionNo
+        }, normP);
+        if (didSync) syncedMainCount++;
       }
 
       db.close();
