@@ -989,6 +989,9 @@
         <!-- แท็บ 1: ข้อมูลทั่วไปและสังกัด -->
         <!-- ============================================================== -->
         <div id="d70TabPanel1" style="display:block;">
+          <!-- กล่องแจ้งเตือนหน้างานเมื่อพบข้อมูลซ้ำ (เลข 13 หลัก / ชื่อ-สกุล / เลขตำแหน่ง) พร้อมเบอร์โทรติดต่อระหว่าง 2 คน -->
+          <div id="d70ConflictContactCard" style="display:none; background:#fef2f2; border:2px solid #dc2626; border-radius:8px; padding:12px 14px; margin-bottom:12px; color:#7f1d1d; font-size:13px; line-height:1.55; box-shadow:0 4px 12px rgba(220,38,38,0.12);"></div>
+
           <div style="background:#eff6ff; border:1px solid #bfdbfe; border-radius:6px; padding:12px; margin-bottom:12px;">
             <div style="font-weight:bold; color:#1e3a8a; font-size:13.5px; margin-bottom:8px;">🏥 ข้อมูลสังกัด รพ.สต. (เลือก รพ.สต. แล้วระบบจะเติม ลำดับsml และขนาด S/M/L อัตโนมัติ)</div>
             <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:8px;">
@@ -1021,13 +1024,14 @@
 
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:10px;">
             <div>
-              <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">เลขประจำตัวประชาชน 13 หลัก (Primary Key):</label>
-              <input type="text" id="d70_cid" maxlength="13" readonly style="width:100%; padding:7px; font-size:14px; font-family:Consolas, monospace; font-weight:bold; background:#e2e8f0; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">เลขประจำตัวประชาชน 13 หลัก (ห้ามซ้ำคนอื่น):</label>
+              <input type="text" id="d70_cid" maxlength="13" oninput="scheduleD70DuplicateCheck('cid')" onblur="triggerD70DuplicateCheck('cid')" readonly style="width:100%; padding:7px; font-size:14px; font-family:Consolas, monospace; font-weight:bold; background:#e2e8f0; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <div id="d70CidDupMsg" style="display:none; margin-top:4px; padding:5px 8px; border-radius:4px; background:#fef2f2; border:1px solid #fca5a5; color:#dc2626; font-size:11.5px; font-weight:bold; line-height:1.45;"></div>
             </div>
             <div>
               <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">ชื่อ-สกุล (พร้อมคำนำหน้า - ห้ามซ้ำคนอื่น):</label>
               <input type="text" id="d70_fullname" oninput="scheduleD70DuplicateCheck('fullname')" onblur="triggerD70DuplicateCheck('fullname')" placeholder="เช่น นายธนโชติ ดวงตะวัน" required style="width:100%; padding:7px; font-size:14px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
-              <div id="d70FullnameDupMsg" style="display:none; margin-top:4px; padding:4px 7px; border-radius:4px; background:#fef2f2; border:1px solid #fca5a5; color:#dc2626; font-size:11.5px; font-weight:bold; line-height:1.4;"></div>
+              <div id="d70FullnameDupMsg" style="display:none; margin-top:4px; padding:5px 8px; border-radius:4px; background:#fef2f2; border:1px solid #fca5a5; color:#dc2626; font-size:11.5px; font-weight:bold; line-height:1.45;"></div>
             </div>
             <div>
               <label style="font-size:12.5px; font-weight:bold; display:block; margin-bottom:3px;">วันเดือนปีเกิด (พ.ศ. YYYY-MM-DD):</label>
@@ -1307,7 +1311,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261127e"></script>
-  <script src="data70.js?v=20261127e"></script>
+  <script src="app.js?v=20261127f"></script>
+  <script src="data70.js?v=20261127f"></script>
 </BODY>
 </HTML>

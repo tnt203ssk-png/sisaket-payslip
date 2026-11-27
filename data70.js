@@ -324,7 +324,10 @@ let data70VisibleChangeSteps = 7;
 let adminData70List = [];
 let parsedImportData70Rows = [];
 let d70DupCheckTimer = null;
+let d70OriginalCid = '';
+let d70IsNewRecord = false;
 let d70CurrentDuplicateState = {
+  duplicate_cid: null,
   duplicate_name: null,
   duplicate_pos_no: null
 };
@@ -607,11 +610,66 @@ function fmtNumInput(val) {
 }
 
 // ============================================================================
-// ระบบตรวจสอบ "ชื่อ-สกุล" และ "เลขตำแหน่งปัจจุบัน" ไม่ให้ซ้ำกับคนอื่น (Real-time & onBlur)
+// ระบบตรวจสอบ "เลข 13 หลัก", "ชื่อ-สกุล" และ "เลขตำแหน่งปัจจุบัน" ไม่ให้ซ้ำกับคนอื่น
+// พร้อมแสดงข้อมูลคู่กรณีและเบอร์โทรติดต่อหน้างาน เพื่อประสานงานแก้ไขไปด้วยกัน
 // ============================================================================
-function renderD70DuplicateState(dupName, dupPosNo) {
+function formatConflictContactHtml(dup, conflictLabel) {
+  if (!dup) return '';
+  const phoneStr = String(dup.phone || '').trim();
+  const cleanTel = phoneStr.replace(/[^0-9]/g, '');
+  const telBtn = cleanTel.length >= 9
+    ? `<a href="tel:${cleanTel}" style="display:inline-block; background:#16a34a; color:#fff; padding:2px 8px; border-radius:4px; text-decoration:none; font-size:11.5px; font-weight:bold; margin-left:6px;">📲 โทรติดต่อทันที (${phoneStr})</a>`
+    : `<span style="color:#991b1b;">(ไม่พบเบอร์โทรในระบบ)</span>`;
+  const posText = [dup.current_position, dup.current_level].filter(Boolean).join(' ') || '-';
+
+  return `
+    <div>⚠️ <b>${conflictLabel} ซ้ำกับ:</b> <u style="color:#991b1b;">${dup.fullname || '-'}</u></div>
+    <div style="margin-top:2px; color:#7f1d1d; font-weight:normal;">
+      • <b>เลข 13 หลัก:</b> <code>${dup.cid || '-'}</code> | <b>สังกัด:</b> ${dup.hname || '-'}<br>
+      • <b>ตำแหน่ง:</b> ${posText} (${dup.work_group || '-'}) | <b>เลขตำแหน่ง:</b> <code>${dup.position_no || '-'}</code><br>
+      • <b>📞 เบอร์โทรติดต่อ:</b> <b>${phoneStr || 'ไม่ได้ระบุ'}</b> ${telBtn}
+      ${dup.email ? ` | <b>อีเมล:</b> ${dup.email}` : ''}
+    </div>
+    <div style="margin-top:3px; color:#b91c1c; font-size:11px;">
+      💡 <i>กรุณาติดต่อประสานงานระหว่างทั้ง 2 ท่าน เพื่อตรวจสอบและแก้ไขข้อมูลที่ซ้ำกันไปด้วยกัน</i>
+    </div>
+  `;
+}
+
+function formatConflictPlainText(dup, conflictTitle) {
+  if (!dup) return '';
+  const posText = [dup.current_position, dup.current_level].filter(Boolean).join(' ') || '-';
+  return (
+    `⚠️ ${conflictTitle}\n` +
+    `   • ซ้ำกับชื่อ-สกุล: ${dup.fullname || '-'}\n` +
+    `   • เลข 13 หลัก: ${dup.cid || '-'}\n` +
+    `   • สังกัด รพ.สต.: ${dup.hname || '-'}\n` +
+    `   • ตำแหน่ง: ${posText} (เลขตำแหน่ง: ${dup.position_no || '-'})\n` +
+    `   • 📞 เบอร์โทรติดต่อ: ${dup.phone || 'ไม่ได้ระบุ'}\n` +
+    `   • 📧 อีเมล: ${dup.email || '-'}`
+  );
+}
+
+function renderD70DuplicateState(dupName, dupPosNo, dupCid) {
+  d70CurrentDuplicateState.duplicate_cid = dupCid || null;
   d70CurrentDuplicateState.duplicate_name = dupName || null;
   d70CurrentDuplicateState.duplicate_pos_no = dupPosNo || null;
+
+  const cidInput = document.getElementById('d70_cid');
+  const cidMsg = document.getElementById('d70CidDupMsg');
+  if (cidInput && cidMsg) {
+    if (dupCid) {
+      cidInput.style.borderColor = '#dc2626';
+      cidInput.style.background = '#fef2f2';
+      cidMsg.style.display = 'block';
+      cidMsg.innerHTML = formatConflictContactHtml(dupCid, 'เลขประจำตัวประชาชน 13 หลักนี้');
+    } else {
+      cidInput.style.borderColor = '#94a3b8';
+      cidInput.style.background = cidInput.readOnly ? '#e2e8f0' : '#ffffff';
+      cidMsg.style.display = 'none';
+      cidMsg.innerHTML = '';
+    }
+  }
 
   const nameInput = document.getElementById('d70_fullname');
   const nameMsg = document.getElementById('d70FullnameDupMsg');
@@ -620,12 +678,12 @@ function renderD70DuplicateState(dupName, dupPosNo) {
       nameInput.style.borderColor = '#dc2626';
       nameInput.style.background = '#fef2f2';
       nameMsg.style.display = 'block';
-      nameMsg.textContent = `⚠️ พบชื่อ-สกุลนี้ในระบบแล้ว (เลข 13 หลัก: ${dupName.cid} | สังกัด: ${dupName.hname || '-'})`;
+      nameMsg.innerHTML = formatConflictContactHtml(dupName, 'ชื่อ-สกุลนี้');
     } else {
       nameInput.style.borderColor = '#94a3b8';
       nameInput.style.background = '#ffffff';
       nameMsg.style.display = 'none';
-      nameMsg.textContent = '';
+      nameMsg.innerHTML = '';
     }
   }
 
@@ -636,12 +694,34 @@ function renderD70DuplicateState(dupName, dupPosNo) {
       posInput.style.borderColor = '#dc2626';
       posInput.style.background = '#fef2f2';
       posMsg.style.display = 'block';
-      posMsg.textContent = `⚠️ เลขตำแหน่งนี้ซ้ำกับ ${dupPosNo.fullname || '-'} (${dupPosNo.hname || 'เลข 13 หลัก: ' + dupPosNo.cid})`;
+      posMsg.innerHTML = formatConflictContactHtml(dupPosNo, 'เลขตำแหน่งปัจจุบันนี้');
     } else {
       posInput.style.borderColor = '#94a3b8';
       posInput.style.background = '#ffffff';
       posMsg.style.display = 'none';
-      posMsg.textContent = '';
+      posMsg.innerHTML = '';
+    }
+  }
+
+  // แสดงการ์ดสรุปข้อมูลคู่กรณีด้านบนสุดของฟอร์มเพื่อให้หน้างานติดต่อประสานงานกันได้ทันที
+  const cardEl = document.getElementById('d70ConflictContactCard');
+  if (cardEl) {
+    const blocks = [];
+    if (dupCid) blocks.push(formatConflictContactHtml(dupCid, 'เลขประจำตัวประชาชน 13 หลัก'));
+    if (dupName) blocks.push(formatConflictContactHtml(dupName, 'ชื่อ-สกุล'));
+    if (dupPosNo) blocks.push(formatConflictContactHtml(dupPosNo, 'เลขตำแหน่งปัจจุบัน'));
+
+    if (blocks.length > 0) {
+      cardEl.style.display = 'block';
+      cardEl.innerHTML = `
+        <div style="font-size:14px; font-weight:bold; color:#b91c1c; margin-bottom:6px; border-bottom:1px solid #fca5a5; padding-bottom:4px;">
+          🚨 แจ้งเตือนหน้างาน: พบข้อมูลซ้ำในระบบ กรุณาติดต่อประสานงานระหว่างทั้ง 2 ท่านเพื่อแก้ไขไปด้วยกัน
+        </div>
+        ${blocks.join('<hr style="border:none; border-top:1px dashed #fca5a5; margin:8px 0;">')}
+      `;
+    } else {
+      cardEl.style.display = 'none';
+      cardEl.innerHTML = '';
     }
   }
 }
@@ -657,7 +737,7 @@ async function triggerD70DuplicateCheck(fieldType) {
   const cidEl = document.getElementById('d70_cid');
   const nameEl = document.getElementById('d70_fullname');
   const posEl = document.getElementById('d70_position_no');
-  if (!cidEl || !nameEl || !posEl) return { duplicate_name: null, duplicate_pos_no: null };
+  if (!cidEl || !nameEl || !posEl) return { duplicate_cid: null, duplicate_name: null, duplicate_pos_no: null };
 
   if (fieldType === 'fullname') {
     // ตัดช่องว่างซ้ำตรงกลางออกเมื่อ onBlur
@@ -671,21 +751,24 @@ async function triggerD70DuplicateCheck(fieldType) {
   const fullname = normalizeFullnameSpaces(nameEl.value);
   const position_no = normalizeFullnameSpaces(posEl.value);
 
-  if (!fullname && (!position_no || position_no === '-')) {
-    renderD70DuplicateState(null, null);
-    return { duplicate_name: null, duplicate_pos_no: null };
+  if (!fullname && (!position_no || position_no === '-') && (!d70IsNewRecord || cid.length !== 13)) {
+    renderD70DuplicateState(null, null, null);
+    return { duplicate_cid: null, duplicate_name: null, duplicate_pos_no: null };
   }
 
   try {
     const res = await apiPost({
       action: 'check_data70_duplicate',
       cid,
+      original_cid: d70OriginalCid,
+      check_cid_conflict: d70IsNewRecord,
       fullname,
       position_no
     });
     if (res && res.success) {
-      renderD70DuplicateState(res.duplicate_name, res.duplicate_pos_no);
+      renderD70DuplicateState(res.duplicate_name, res.duplicate_pos_no, res.duplicate_cid);
       return {
+        duplicate_cid: res.duplicate_cid || null,
         duplicate_name: res.duplicate_name || null,
         duplicate_pos_no: res.duplicate_pos_no || null
       };
@@ -701,6 +784,8 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
   if (!modal) return;
 
   const cid = String(targetCid || (typeof currentMember !== 'undefined' && currentMember ? currentMember.idno : '') || '').replace(/[^0-9]/g, '').trim();
+  d70OriginalCid = cid;
+  d70IsNewRecord = Boolean(isNewFromAdmin && cid.length !== 13);
   const cidInput = document.getElementById('d70_cid');
   if (cidInput) {
     cidInput.value = cid;
@@ -735,6 +820,8 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
   try {
     const res = await apiPost({ action: 'get_data70', cid });
     if (res && res.success && res.exists && res.record) {
+      d70OriginalCid = res.record.cid || cid;
+      d70IsNewRecord = false;
       populateData70Form(res.record);
       if (badgeEl) {
         badgeEl.textContent = `✅ โหลดข้อมูลจากตาราง personnel_data70 สำเร็จ (ลำดับที่ ${res.record.seq_no || '-'})`;
@@ -742,6 +829,8 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
         badgeEl.style.color = '#166534';
       }
     } else {
+      d70OriginalCid = cid;
+      d70IsNewRecord = true;
       // ยังไม่มีใน personnel_data70 -> ดึงจาก tbmain / person / tbdetail มาเติมให้อัตโนมัติ
       const fbMem = (res && res.fallback_member) || (typeof currentMember !== 'undefined' ? currentMember : {}) || {};
       const fbSlip = (res && res.fallback_slip) || {};
@@ -994,18 +1083,27 @@ async function saveData70Form(e) {
   }
 
   try {
-    // ตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่นก่อนบันทึก
+    // ตรวจสอบ เลข 13 หลัก, ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่นก่อนบันทึก
+    rec.original_cid = d70OriginalCid;
+    rec.is_new_record = d70IsNewRecord;
     const dupRes = await triggerD70DuplicateCheck('both');
-    if (dupRes && (dupRes.duplicate_name || dupRes.duplicate_pos_no)) {
+    if (dupRes && (dupRes.duplicate_cid || dupRes.duplicate_name || dupRes.duplicate_pos_no)) {
       switchData70Tab(1);
       const msgs = [];
+      if (dupRes.duplicate_cid) {
+        msgs.push(formatConflictPlainText(dupRes.duplicate_cid, `เลขประจำตัวประชาชน 13 หลัก "${rec.cid}" ซ้ำกับข้อมูลที่มีอยู่แล้ว:`));
+      }
       if (dupRes.duplicate_name) {
-        msgs.push(`⚠️ พบชื่อ-สกุล "${rec.fullname}" ในระบบแล้ว (เลข 13 หลัก: ${dupRes.duplicate_name.cid} | สังกัด: ${dupRes.duplicate_name.hname || '-'})`);
+        msgs.push(formatConflictPlainText(dupRes.duplicate_name, `ชื่อ-สกุล "${rec.fullname}" ซ้ำกับบุคลากรอื่นในระบบ:`));
       }
       if (dupRes.duplicate_pos_no) {
-        msgs.push(`⚠️ เลขตำแหน่งปัจจุบัน "${rec.position_no}" ซ้ำกับ ${dupRes.duplicate_pos_no.fullname || '-'} (${dupRes.duplicate_pos_no.hname || dupRes.duplicate_pos_no.cid})`);
+        msgs.push(formatConflictPlainText(dupRes.duplicate_pos_no, `เลขตำแหน่งปัจจุบัน "${rec.position_no}" ซ้ำกับบุคลากรอื่นในระบบ:`));
       }
-      alert('ไม่สามารถบันทึกข้อมูลได้ เนื่องจากพบข้อมูลซ้ำกับบุคลากรอื่น:\n\n' + msgs.join('\n') + '\n\nกรุณาตรวจสอบและแก้ไขก่อนกดบันทึก');
+      alert(
+        '🚨 แจ้งเตือนหน้างาน: ไม่สามารถบันทึกได้ เนื่องจากพบข้อมูลซ้ำกัน\n\n' +
+        msgs.join('\n\n') +
+        '\n\n💡 กรุณาติดต่อประสานงานระหว่างทั้ง 2 ท่านตามเบอร์โทรศัพท์ข้างต้น เพื่อตรวจสอบและแก้ไขข้อมูลไปด้วยกัน'
+      );
       return;
     }
 
@@ -1014,13 +1112,16 @@ async function saveData70Form(e) {
       record: rec
     });
     if (!res || !res.success) {
-      if (res && (res.duplicate_name || res.duplicate_pos_no)) {
-        renderD70DuplicateState(res.duplicate_name, res.duplicate_pos_no);
+      if (res && (res.duplicate_cid || res.duplicate_name || res.duplicate_pos_no)) {
+        renderD70DuplicateState(res.duplicate_name, res.duplicate_pos_no, res.duplicate_cid);
         switchData70Tab(1);
       }
       alert((res && res.message) || 'ไม่สามารถบันทึกข้อมูลได้');
       return;
     }
+
+    d70OriginalCid = rec.cid;
+    d70IsNewRecord = false;
 
     // อัปเดต currentMember ในหน้าเว็บทันทีหากเป็นเลข 13 หลักเดียวกับที่ล็อกอินอยู่ (ไม่ต้อง Logout แล้ว Login ใหม่)
     if (typeof currentMember !== 'undefined' && currentMember && String(currentMember.idno).trim() === rec.cid) {
@@ -1339,16 +1440,19 @@ function handleData70FileSelect(e) {
         }
       }
 
-      // เตรียม Map ตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น
+      // เตรียม Map ตรวจสอบ เลข 13 หลัก, ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น พร้อมเบอร์โทรติดต่อ
+      const seenCidInFileMap = new Map();
       const seenNameMap = new Map();
       const seenPosNoMap = new Map();
       for (const ex of (adminData70List || [])) {
         const eCid = String(ex.cid || '').trim();
         const eName = normalizeFullnameSpaces(ex.fullname);
         const ePos = normalizeFullnameSpaces(ex.position_no);
-        if (eName) seenNameMap.set(eName, { cid: eCid, fullname: eName, hname: ex.hname || '' });
+        const ePhone = String(ex.phone || '').trim();
+        const info = { cid: eCid, fullname: eName, hname: ex.hname || '', position_no: ePos, phone: ePhone };
+        if (eName) seenNameMap.set(eName, info);
         if (ePos && ePos !== '-' && ePos !== 'ไม่มี') {
-          seenPosNoMap.set(ePos, { cid: eCid, fullname: eName, hname: ex.hname || '', position_no: ePos });
+          seenPosNoMap.set(ePos, info);
         }
       }
 
@@ -1369,28 +1473,47 @@ function handleData70FileSelect(e) {
         const normFullname = normalizeFullnameSpaces(cleanExcelTextValue(row[6]));
         const workGroupVal = hasWorkGroupCol ? cleanExcelTextValue(row[11]) : '';
         const normPosNo = normalizeFullnameSpaces(cleanExcelTextValue(row[11 + shift]));
+        const rowPhone = cleanExcelTextValue(row[71 + shift]);
 
-        // ตรวจสอบชื่อ-สกุลซ้ำกับเลข 13 หลักอื่น
+        // 1. ตรวจสอบเลข 13 หลักซ้ำในไฟล์เดียวกัน
+        if (seenCidInFileMap.has(cid)) {
+          const owner = seenCidInFileMap.get(cid);
+          duplicateWarnings.push(
+            `แถวที่ ${r + 1}: เลข 13 หลัก "${cid}" ของ ${normFullname} (${hname || '-'} | โทร: ${rowPhone || '-'}) ` +
+            `ซ้ำกับ ${owner.fullname} (${owner.hname || '-'} | 📞 โทรติดต่อ: ${owner.phone || 'ไม่ระบุ'})`
+          );
+          continue;
+        }
+
+        // 2. ตรวจสอบชื่อ-สกุลซ้ำกับเลข 13 หลักอื่น
         if (normFullname && seenNameMap.has(normFullname)) {
           const owner = seenNameMap.get(normFullname);
           if (owner.cid !== cid) {
-            duplicateWarnings.push(`แถวที่ ${r + 1}: ชื่อ-สกุล "${normFullname}" (${cid}) ซ้ำกับเลข 13 หลัก ${owner.cid} (${owner.hname || '-'})`);
+            duplicateWarnings.push(
+              `แถวที่ ${r + 1}: ชื่อ-สกุล "${normFullname}" (${cid} | ${hname || '-'} | โทร: ${rowPhone || '-'}) ` +
+              `ซ้ำกับเลข 13 หลัก ${owner.cid} (${owner.hname || '-'} | 📞 โทรติดต่อ: ${owner.phone || 'ไม่ระบุ'})`
+            );
             continue;
           }
         }
 
-        // ตรวจสอบเลขตำแหน่งปัจจุบันซ้ำกับเลข 13 หลักอื่น
+        // 3. ตรวจสอบเลขตำแหน่งปัจจุบันซ้ำกับเลข 13 หลักอื่น
         if (normPosNo && normPosNo !== '-' && normPosNo !== 'ไม่มี' && seenPosNoMap.has(normPosNo)) {
           const owner = seenPosNoMap.get(normPosNo);
           if (owner.cid !== cid) {
-            duplicateWarnings.push(`แถวที่ ${r + 1}: เลขตำแหน่ง "${normPosNo}" ของ ${normFullname} (${cid}) ซ้ำกับ ${owner.fullname} (${owner.cid})`);
+            duplicateWarnings.push(
+              `แถวที่ ${r + 1}: เลขตำแหน่ง "${normPosNo}" ของ ${normFullname} (${cid} | ${hname || '-'} | โทร: ${rowPhone || '-'}) ` +
+              `ซ้ำกับ ${owner.fullname} (เลข 13 หลัก: ${owner.cid} | ${owner.hname || '-'} | 📞 โทรติดต่อ: ${owner.phone || 'ไม่ระบุ'})`
+            );
             continue;
           }
         }
 
-        if (normFullname) seenNameMap.set(normFullname, { cid, fullname: normFullname, hname });
+        const curInfo = { cid, fullname: normFullname, hname, position_no: normPosNo, phone: rowPhone };
+        seenCidInFileMap.set(cid, curInfo);
+        if (normFullname) seenNameMap.set(normFullname, curInfo);
         if (normPosNo && normPosNo !== '-' && normPosNo !== 'ไม่มี') {
-          seenPosNoMap.set(normPosNo, { cid, fullname: normFullname, hname, position_no: normPosNo });
+          seenPosNoMap.set(normPosNo, curInfo);
         }
 
         const rec = {

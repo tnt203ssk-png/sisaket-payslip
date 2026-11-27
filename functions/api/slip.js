@@ -618,20 +618,49 @@ async function ensureData70Table(db) {
   await db.query("UPDATE personnel_data70 SET work_group = 'ผอ.รพ.สต.' WHERE cid = '3330100466968' AND (work_group IS NULL OR work_group = '');");
 }
 
-async function checkData70Duplicates(db, cid, fullname, positionNo) {
+async function checkData70Duplicates(db, cid, fullname, positionNo, originalCid, checkCidConflict) {
   const cleanCid = String(cid || '').replace(/[^0-9]/g, '').trim();
+  const cleanOrigCid = String(originalCid || '').replace(/[^0-9]/g, '').trim();
   const normName = normalizeSpaces(fullname);
   const normPosNo = normalizeSpaces(positionNo);
 
+  let duplicateCid = null;
   let duplicateName = null;
   let duplicatePosNo = null;
 
+  const selectCols = `
+    d.cid, d.fullname, d.hname, d.current_position, d.current_level, d.work_group, d.position_no,
+    COALESCE(NULLIF(TRIM(d.phone), ''), COALESCE(m.mbphone, '')) AS phone,
+    COALESCE(NULLIF(TRIM(d.email), ''), COALESCE(m.email, '')) AS email
+  `;
+
+  // 1. ตรวจสอบเลข 13 หลักซ้ำกัน (กรณีเพิ่มรายการใหม่ หรือเปลี่ยนเลข 13 หลักไปซ้ำกับคนที่มีอยู่แล้วในระบบ)
+  if (cleanCid.length === 13 && (checkCidConflict || (cleanOrigCid && cleanOrigCid !== cleanCid))) {
+    const qDupCid = await db.query(`
+      SELECT ${selectCols}
+      FROM personnel_data70 d
+      LEFT JOIN tbmain m ON TRIM(d.cid) COLLATE utf8_general_ci = TRIM(m.idno) COLLATE utf8_general_ci
+      WHERE d.cid = ${sqlEsc(cleanCid)}
+      LIMIT 1;
+    `);
+    if (qDupCid.rows && qDupCid.rows.length > 0) {
+      const existing = qDupCid.rows[0];
+      const existingNormName = normalizeSpaces(existing.fullname);
+      // แจ้งเตือนหากเป็นการเพิ่มใหม่ หรือชื่อ-สกุลที่กรอกไม่ตรงกับเจ้าของเลข 13 หลักเดิม
+      if ((cleanOrigCid !== cleanCid) || (normName && existingNormName && normName !== existingNormName)) {
+        duplicateCid = existing;
+      }
+    }
+  }
+
+  // 2. ตรวจสอบ ชื่อ-สกุล ซ้ำกับเลข 13 หลักอื่น
   if (normName) {
     const qDupName = await db.query(`
-      SELECT cid, fullname, hname, position_no
-      FROM personnel_data70
-      WHERE cid <> ${sqlEsc(cleanCid)}
-        AND TRIM(REPLACE(REPLACE(REPLACE(fullname, '   ', ' '), '  ', ' '), '  ', ' ')) = ${sqlEsc(normName)}
+      SELECT ${selectCols}
+      FROM personnel_data70 d
+      LEFT JOIN tbmain m ON TRIM(d.cid) COLLATE utf8_general_ci = TRIM(m.idno) COLLATE utf8_general_ci
+      WHERE d.cid <> ${sqlEsc(cleanCid)}
+        AND TRIM(REPLACE(REPLACE(REPLACE(d.fullname, '   ', ' '), '  ', ' '), '  ', ' ')) = ${sqlEsc(normName)}
       LIMIT 1;
     `);
     if (qDupName.rows && qDupName.rows.length > 0) {
@@ -639,12 +668,14 @@ async function checkData70Duplicates(db, cid, fullname, positionNo) {
     }
   }
 
+  // 3. ตรวจสอบ เลขตำแหน่งปัจจุบัน ซ้ำกับเลข 13 หลักอื่น
   if (normPosNo && normPosNo !== '-' && normPosNo !== 'ไม่มี') {
     const qDupPos = await db.query(`
-      SELECT cid, fullname, hname, position_no
-      FROM personnel_data70
-      WHERE cid <> ${sqlEsc(cleanCid)}
-        AND TRIM(position_no) = ${sqlEsc(normPosNo)}
+      SELECT ${selectCols}
+      FROM personnel_data70 d
+      LEFT JOIN tbmain m ON TRIM(d.cid) COLLATE utf8_general_ci = TRIM(m.idno) COLLATE utf8_general_ci
+      WHERE d.cid <> ${sqlEsc(cleanCid)}
+        AND TRIM(d.position_no) = ${sqlEsc(normPosNo)}
       LIMIT 1;
     `);
     if (qDupPos.rows && qDupPos.rows.length > 0) {
@@ -652,7 +683,7 @@ async function checkData70Duplicates(db, cid, fullname, positionNo) {
     }
   }
 
-  return { duplicateName, duplicatePosNo };
+  return { duplicateCid, duplicateName, duplicatePosNo };
 }
 
 // Helper จัดรูปแบบตำแหน่ง+ระดับ และแยกชื่อ รพ.สต. ตำบล อำเภอ เพื่อซิงก์ลง tbmain, person, tbdetail
@@ -1536,13 +1567,16 @@ export async function onRequest(context) {
     if (action === 'check_data70_duplicate') {
       await ensureData70Table(db);
       const cid = String(body.cid || '').replace(/[^0-9]/g, '').trim();
+      const originalCid = String(body.original_cid || '').replace(/[^0-9]/g, '').trim();
+      const checkCidConflict = Boolean(body.check_cid_conflict);
       const fullname = normalizeSpaces(body.fullname || '');
       const positionNo = normalizeSpaces(body.position_no || '');
 
-      const { duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, fullname, positionNo);
+      const { duplicateCid, duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, fullname, positionNo, originalCid, checkCidConflict);
       db.close();
       return new Response(JSON.stringify({
         success: true,
+        duplicate_cid: duplicateCid,
         duplicate_name: duplicateName,
         duplicate_pos_no: duplicatePosNo
       }), { headers: corsHeaders });
@@ -1552,6 +1586,8 @@ export async function onRequest(context) {
       await ensureData70Table(db);
       const rec = body.record || body || {};
       const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
+      const originalCid = String(rec.original_cid || cid).replace(/[^0-9]/g, '').trim();
+      const isNewRecord = Boolean(rec.is_new_record);
       if (cid.length !== 13) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชนต้องมี 13 หลัก' }), { headers: corsHeaders });
@@ -1560,22 +1596,28 @@ export async function onRequest(context) {
       const normFullname = normalizeSpaces(rec.fullname || '');
       const normPositionNo = normalizeSpaces(rec.position_no || '');
 
-      // ตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ห้ามซ้ำกับคนอื่น (cid <> ปัจจุบัน)
-      const { duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, normFullname, normPositionNo);
-      if (duplicateName || duplicatePosNo) {
+      // ตรวจสอบ เลข 13 หลัก, ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ห้ามซ้ำกับคนอื่น พร้อมแจ้งข้อมูลติดต่อของคู่กรณี
+      const { duplicateCid, duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, normFullname, normPositionNo, originalCid, isNewRecord);
+      if (duplicateCid || duplicateName || duplicatePosNo) {
         db.close();
+        const fmtOwner = (d) => `ชื่อ-สกุล: ${d.fullname || '-'} | เลข 13 หลัก: ${d.cid || '-'} | สังกัด: ${d.hname || '-'} | ตำแหน่ง: ${d.current_position || ''} ${d.current_level || ''} | เลขตำแหน่ง: ${d.position_no || '-'} | 📞 เบอร์โทรติดต่อ: ${d.phone || 'ไม่ได้ระบุ'} | อีเมล: ${d.email || '-'}`;
         const errMsgs = [];
+        if (duplicateCid) {
+          errMsgs.push(`⚠️ เลขประจำตัวประชาชน 13 หลัก "${cid}" ซ้ำกับข้อมูลของ:\n👉 ${fmtOwner(duplicateCid)}`);
+        }
         if (duplicateName) {
-          errMsgs.push(`⚠️ พบชื่อ-สกุล "${normFullname}" ซ้ำกับรายชื่อที่มีอยู่แล้วในระบบ (เลข 13 หลัก: ${duplicateName.cid} | สังกัด: ${duplicateName.hname || '-'})`);
+          errMsgs.push(`⚠️ ชื่อ-สกุล "${normFullname}" ซ้ำกับข้อมูลของ:\n👉 ${fmtOwner(duplicateName)}`);
         }
         if (duplicatePosNo) {
-          errMsgs.push(`⚠️ เลขตำแหน่งปัจจุบัน "${normPositionNo}" ซ้ำกับ ${duplicatePosNo.fullname || '-'} (เลข 13 หลัก: ${duplicatePosNo.cid} | สังกัด: ${duplicatePosNo.hname || '-'})`);
+          errMsgs.push(`⚠️ เลขตำแหน่งปัจจุบัน "${normPositionNo}" ซ้ำกับข้อมูลของ:\n👉 ${fmtOwner(duplicatePosNo)}`);
         }
+        errMsgs.push(`\n💡 กรุณาติดต่อประสานงานระหว่างทั้ง 2 ท่านตามเบอร์โทรศัพท์ข้างต้น เพื่อตรวจสอบและแก้ไขข้อมูลไปด้วยกัน`);
         return new Response(JSON.stringify({
           success: false,
+          duplicate_cid: duplicateCid,
           duplicate_name: duplicateName,
           duplicate_pos_no: duplicatePosNo,
-          message: errMsgs.join('\n')
+          message: errMsgs.join('\n\n')
         }), { headers: corsHeaders });
       }
 
@@ -1796,23 +1838,40 @@ export async function onRequest(context) {
         return new Response(JSON.stringify({ success: false, message: 'ไม่พบรายการข้อมูลสำหรับนำเข้า' }), { headers: corsHeaders });
       }
 
-      // โหลดข้อมูลเดิมทั้งหมดเพื่อตรวจสอบ ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น (cid ต่างกัน)
-      const qExisting = await db.query("SELECT cid, fullname, position_no, hname FROM personnel_data70;");
+      // โหลดข้อมูลเดิมทั้งหมดพร้อมเบอร์โทรและอีเมล เพื่อตรวจสอบ เลข 13 หลัก, ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น
+      const qExisting = await db.query(`
+        SELECT d.cid, d.fullname, d.position_no, d.hname, d.current_position, d.current_level,
+               COALESCE(NULLIF(TRIM(d.phone), ''), COALESCE(m.mbphone, '')) AS phone,
+               COALESCE(NULLIF(TRIM(d.email), ''), COALESCE(m.email, '')) AS email
+        FROM personnel_data70 d
+        LEFT JOIN tbmain m ON TRIM(d.cid) COLLATE utf8_general_ci = TRIM(m.idno) COLLATE utf8_general_ci;
+      `);
+      const cidToOwnerMap = new Map();
       const nameToCidMap = new Map();
       const posNoToCidMap = new Map();
       for (const r of (qExisting.rows || [])) {
         const eCid = String(r.cid || '').trim();
         const eName = normalizeSpaces(r.fullname);
         const ePosNo = normalizeSpaces(r.position_no);
-        if (eName) nameToCidMap.set(eName, { cid: eCid, fullname: eName, hname: r.hname || '' });
+        const info = {
+          cid: eCid,
+          fullname: eName,
+          hname: r.hname || '',
+          position_no: ePosNo,
+          phone: r.phone || '',
+          email: r.email || ''
+        };
+        if (eCid) cidToOwnerMap.set(eCid, info);
+        if (eName) nameToCidMap.set(eName, info);
         if (ePosNo && ePosNo !== '-' && ePosNo !== 'ไม่มี') {
-          posNoToCidMap.set(ePosNo, { cid: eCid, fullname: eName, hname: r.hname || '', position_no: ePosNo });
+          posNoToCidMap.set(ePosNo, info);
         }
       }
 
       let importedCount = 0;
       let syncedMainCount = 0;
       const skippedDuplicates = [];
+      const seenCidsInBatch = new Map();
 
       for (const rec of items) {
         const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
@@ -1821,28 +1880,38 @@ export async function onRequest(context) {
         const normFullname = normalizeSpaces(rec.fullname || '');
         const normPositionNo = normalizeSpaces(rec.position_no || '');
 
-        // ตรวจสอบชื่อ-สกุลซ้ำกับเลข 13 หลักอื่น
+        // 1. ตรวจสอบเลข 13 หลักซ้ำกันภายในไฟล์เดียวกันแต่คนละชื่อ
+        if (seenCidsInBatch.has(cid)) {
+          const prev = seenCidsInBatch.get(cid);
+          skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): เลข 13 หลักซ้ำกับ ${prev.fullname} (${prev.hname || '-'} | 📞 โทร: ${prev.phone || 'ไม่ระบุ'})`);
+          continue;
+        }
+
+        // 2. ตรวจสอบชื่อ-สกุลซ้ำกับเลข 13 หลักอื่น
         if (normFullname && nameToCidMap.has(normFullname)) {
           const owner = nameToCidMap.get(normFullname);
           if (owner.cid !== cid) {
-            skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): ชื่อ-สกุลซ้ำกับเลข 13 หลัก ${owner.cid} (${owner.hname || '-'})`);
+            skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): ชื่อ-สกุลซ้ำกับ ${owner.fullname} (เลข 13 หลัก: ${owner.cid} | สังกัด: ${owner.hname || '-'} | 📞 โทร: ${owner.phone || 'ไม่ระบุ'})`);
             continue;
           }
         }
 
-        // ตรวจสอบเลขตำแหน่งปัจจุบันซ้ำกับเลข 13 หลักอื่น
+        // 3. ตรวจสอบเลขตำแหน่งปัจจุบันซ้ำกับเลข 13 หลักอื่น
         if (normPositionNo && normPositionNo !== '-' && normPositionNo !== 'ไม่มี' && posNoToCidMap.has(normPositionNo)) {
           const owner = posNoToCidMap.get(normPositionNo);
           if (owner.cid !== cid) {
-            skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): เลขตำแหน่ง "${normPositionNo}" ซ้ำกับ ${owner.fullname} (${owner.cid})`);
+            skippedDuplicates.push(`ข้าม ${cid} (${normFullname}): เลขตำแหน่ง "${normPositionNo}" ซ้ำกับ ${owner.fullname} (เลข 13 หลัก: ${owner.cid} | สังกัด: ${owner.hname || '-'} | 📞 โทร: ${owner.phone || 'ไม่ระบุ'})`);
             continue;
           }
         }
 
         // บันทึกลง Map สำหรับเช็กรายการถัดไปใน Batch เดียวกัน
-        if (normFullname) nameToCidMap.set(normFullname, { cid, fullname: normFullname, hname: rec.hname || '' });
+        const curOwnerInfo = { cid, fullname: normFullname, hname: rec.hname || '', position_no: normPositionNo, phone: rec.phone || '', email: rec.email || '' };
+        seenCidsInBatch.set(cid, curOwnerInfo);
+        cidToOwnerMap.set(cid, curOwnerInfo);
+        if (normFullname) nameToCidMap.set(normFullname, curOwnerInfo);
         if (normPositionNo && normPositionNo !== '-' && normPositionNo !== 'ไม่มี') {
-          posNoToCidMap.set(normPositionNo, { cid, fullname: normFullname, hname: rec.hname || '', position_no: normPositionNo });
+          posNoToCidMap.set(normPositionNo, curOwnerInfo);
         }
 
         const seqNo = Number(rec.seq_no || 0) || (importedCount + 1);
