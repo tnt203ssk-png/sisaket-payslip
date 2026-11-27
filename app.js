@@ -298,8 +298,8 @@ async function openSlipDetail(nauto) {
       hospEl.textContent = hospText;
     }
 
-    const bankFull = `${s.bank_name || 'ธนาคารกรุงไทย จำกัด(มหาชน)'} ${s.bank_branch || 'สาขาศรีสะเกษ'}`;
-    document.getElementById('slipBankName').textContent = bankFull;
+    const bankOnly = String(s.bank_name || 'ธนาคารกรุงไทย จำกัด(มหาชน)').replace(/\s*สาขา.*$/, '').trim();
+    document.getElementById('slipBankName').textContent = bankOnly;
     document.getElementById('slipOfficeName').textContent = s.office_name || 'องค์การบริหารส่วนจังหวัดศรีสะเกษ';
     document.getElementById('slipBankNo').textContent = s.nobank || '-';
 
