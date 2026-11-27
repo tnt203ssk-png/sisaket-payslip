@@ -661,7 +661,9 @@ function buildFullPosition(pos, lvl) {
   const l = normalizeSpaces(lvl);
   if (!p) return l;
   if (!l || l === 'ยังไม่ได้เลื่อนระดับ' || l === 'ยังไม่ได้ปรับระดับ') return p;
-  if (p.endsWith(l)) return p;
+  const pNorm = p.replace(/ฏิ/g, 'ฎิ');
+  const lNorm = l.replace(/ฏิ/g, 'ฎิ');
+  if (pNorm.endsWith(lNorm)) return p;
   return `${p} ${l}`;
 }
 
@@ -816,15 +818,13 @@ export async function onRequest(context) {
                m.idno,
                CASE
                  WHEN d70.current_position IS NOT NULL AND TRIM(d70.current_position) <> ''
-                 THEN TRIM(CONCAT(
-                   TRIM(d70.current_position),
-                   CASE
-                     WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
-                          AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
-                     THEN CONCAT(' ', TRIM(d70.current_level))
-                     ELSE ''
-                   END
-                 ))
+                 THEN CASE
+                   WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
+                        AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                        AND REPLACE(TRIM(d70.current_position), 'ฏิ', 'ฎิ') NOT LIKE CONCAT('%', REPLACE(TRIM(d70.current_level), 'ฏิ', 'ฎิ'))
+                   THEN CONCAT(TRIM(d70.current_position), ' ', TRIM(d70.current_level))
+                   ELSE TRIM(d70.current_position)
+                 END
                  ELSE m.nposit
                END AS nposit,
                m.noffice, m.passc, m.cbank,
@@ -892,15 +892,13 @@ export async function onRequest(context) {
                COALESCE(NULLIF(TRIM(d70.fullname), ''), m.nname) AS nname,
                CASE
                  WHEN d70.current_position IS NOT NULL AND TRIM(d70.current_position) <> ''
-                 THEN TRIM(CONCAT(
-                   TRIM(d70.current_position),
-                   CASE
-                     WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
-                          AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
-                     THEN CONCAT(' ', TRIM(d70.current_level))
-                     ELSE ''
-                   END
-                 ))
+                 THEN CASE
+                   WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
+                        AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                        AND REPLACE(TRIM(d70.current_position), 'ฏิ', 'ฎิ') NOT LIKE CONCAT('%', REPLACE(TRIM(d70.current_level), 'ฏิ', 'ฎิ'))
+                   THEN CONCAT(TRIM(d70.current_position), ' ', TRIM(d70.current_level))
+                   ELSE TRIM(d70.current_position)
+                 END
                  ELSE m.nposit
                END AS nposit,
                COALESCE(NULLIF(TRIM(d70.bank_account), ''), NULLIF(TRIM(m.nobank), ''), d.nobank) AS nobank,
@@ -1977,8 +1975,54 @@ export async function onRequest(context) {
         imported_count: importedCount,
         synced_main_count: syncedMainCount,
         skipped_duplicates: skippedDuplicates,
-        message: `นำเข้าข้อมูลบุคลากร (data70) สำเร็จ ${importedCount} รายการ และซิงก์เบอร์โทร/อีเมลลง tbmain ${syncedMainCount} รายการ` +
+        message: `นำเข้าข้อมูลบุคลากร (data70) สำเร็จ ${importedCount} รายการ และซิงก์ข้อมูลลงตารางใบแจ้งเงินเดือน (tbmain / person / tbdetail) ${syncedMainCount} รายการ` +
           (skippedDuplicates.length > 0 ? `\n⚠️ ข้ามรายการที่ชื่อ-สกุลหรือเลขตำแหน่งซ้ำ ${skippedDuplicates.length} รายการ` : '')
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'sync_all_data70_to_tbmain') {
+      await ensureData70Table(db);
+      // ซิงก์ข้อมูลจาก personnel_data70 ทั้งหมดลงตาราง tbmain, person และ tbdetail โดยเทียบเลขประจำตัวประชาชน 13 หลัก (idno = cid)
+      await db.query(`
+        UPDATE tbmain m
+        INNER JOIN personnel_data70 d ON TRIM(m.idno) COLLATE utf8_general_ci = TRIM(d.cid) COLLATE utf8_general_ci
+        SET
+          m.nname = CASE WHEN d.fullname IS NOT NULL AND TRIM(d.fullname) <> '' THEN TRIM(d.fullname) ELSE m.nname END,
+          m.nposit = CASE
+            WHEN d.current_position IS NOT NULL AND TRIM(d.current_position) <> ''
+            THEN CASE
+              WHEN d.current_level IS NOT NULL AND TRIM(d.current_level) <> ''
+                   AND TRIM(d.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                   AND REPLACE(TRIM(d.current_position), 'ฏิ', 'ฎิ') NOT LIKE CONCAT('%', REPLACE(TRIM(d.current_level), 'ฏิ', 'ฎิ'))
+              THEN CONCAT(TRIM(d.current_position), ' ', TRIM(d.current_level))
+              ELSE TRIM(d.current_position)
+            END
+            ELSE m.nposit
+          END,
+          m.nobank = CASE WHEN d.bank_account IS NOT NULL AND TRIM(d.bank_account) <> '' THEN TRIM(d.bank_account) ELSE m.nobank END,
+          m.mbphone = CASE WHEN d.phone IS NOT NULL AND TRIM(d.phone) <> '' THEN REPLACE(REPLACE(TRIM(d.phone), '-', ''), ' ', '') ELSE m.mbphone END,
+          m.email = CASE WHEN d.email IS NOT NULL AND TRIM(d.email) <> '' THEN TRIM(d.email) ELSE m.email END;
+      `);
+
+      await db.query(`
+        UPDATE tbdetail dt
+        INNER JOIN personnel_data70 d ON TRIM(dt.idno) COLLATE utf8_general_ci = TRIM(d.cid) COLLATE utf8_general_ci
+        SET dt.nobank = TRIM(d.bank_account)
+        WHERE d.bank_account IS NOT NULL AND TRIM(d.bank_account) <> '';
+      `);
+
+      const qMatched = await db.query(`
+        SELECT COUNT(*) AS cnt
+        FROM tbmain m
+        INNER JOIN personnel_data70 d ON TRIM(m.idno) COLLATE utf8_general_ci = TRIM(d.cid) COLLATE utf8_general_ci;
+      `);
+      const matchedCount = Number(qMatched.rows[0]?.cnt || 0);
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        matched_count: matchedCount,
+        message: `ซิงก์ข้อมูลจาก personnel_data70 ลงตาราง tbmain และ tbdetail (เทียบเลข 13 หลักตรงกัน) สำเร็จ จำนวน ${matchedCount} คน!`
       }), { headers: corsHeaders });
     }
 

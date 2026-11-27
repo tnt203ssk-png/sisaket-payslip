@@ -330,14 +330,16 @@ function normalizeFullnameSpaces(str) {
   return String(str || '').trim().replace(/\s+/g, ' ');
 }
 
-// แยกตำแหน่งและระดับจากข้อความรวมใน tbmain.nposit เช่น "นักสาธารณสุขชำนาญการ" -> { pos: "นักสาธารณสุข", lvl: "ชำนาญการ" }
+// แยกตำแหน่งและระดับจากข้อความรวมใน tbmain.nposit เช่น "นักสาธารณสุขชำนาญการ" หรือ "พยาบาลวิชาชีพปฏิบัติการ" -> { pos: "พยาบาลวิชาชีพ", lvl: "ปฎิบัติการ" }
 function splitPositionAndLevel(rawPosit) {
   const s = String(rawPosit || '').trim();
   if (!s) return { pos: '', lvl: '' };
+  const sNorm = s.replace(/ฏิ/g, 'ฎิ');
   const sortedLevels = [...DATA70_LEVELS].sort((a, b) => b.length - a.length);
   for (const lvl of sortedLevels) {
-    if (lvl.length >= 2 && s.endsWith(lvl)) {
-      const pos = s.slice(0, s.length - lvl.length).trim();
+    const lvlNorm = lvl.replace(/ฏิ/g, 'ฎิ');
+    if (lvlNorm.length >= 2 && sNorm.endsWith(lvlNorm)) {
+      const pos = s.slice(0, s.length - lvlNorm.length).trim();
       return { pos: pos || s, lvl };
     }
   }
@@ -854,8 +856,21 @@ function populateData70Form(r) {
     onD70HospitalChange();
   }
 
-  setSelectOrAddOption('d70_current_position', r.current_position || '');
-  setSelectOrAddOption('d70_current_level', r.current_level || '');
+  let curPos = String(r.current_position || '').trim();
+  let curLvl = String(r.current_level || '').trim();
+  if (curPos) {
+    const sp = splitPositionAndLevel(curPos);
+    if (sp.lvl && (!curLvl || curPos.replace(/ฏิ/g, 'ฎิ').endsWith(sp.lvl.replace(/ฏิ/g, 'ฎิ')))) {
+      curPos = sp.pos;
+      if (!curLvl) curLvl = sp.lvl;
+    }
+  }
+  if (curLvl) {
+    curLvl = curLvl.replace(/ปฏิบัติ/g, 'ปฎิบัติ');
+  }
+
+  setSelectOrAddOption('d70_current_position', curPos);
+  setSelectOrAddOption('d70_current_level', curLvl);
   setSelectOrAddOption('d70_work_group', r.work_group || '');
   setSelectOrAddOption('d70_edu_degree', r.edu_degree || '');
   setSelectOrAddOption('d70_edu_major', r.edu_major || '');
@@ -1137,6 +1152,29 @@ function promptOpenData70ByCid() {
     return;
   }
   openData70Modal(cleanCid, true);
+}
+
+async function syncAllData70ToTbmain() {
+  const btn = document.getElementById('btnSyncAllD70ToMain');
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ กำลังซิงก์ข้อมูลทั้งหมดลง tbmain...';
+  }
+  try {
+    const res = await apiPost({ action: 'sync_all_data70_to_tbmain' });
+    if (res && res.success) {
+      alert('✅ ' + res.message);
+    } else {
+      alert((res && res.message) || 'ซิงก์ข้อมูลไม่สำเร็จ');
+    }
+  } catch (err) {
+    alert('เกิดข้อผิดพลาด: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '🔄 ซิงก์ข้อมูลทั้งหมดลงใบแจ้งเงินเดือน (tbmain)';
+    }
+  }
 }
 
 async function deleteAdminData70Row(cid, fullname) {
