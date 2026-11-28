@@ -171,6 +171,20 @@ function populateMemberHeader() {
     btnOpenRoles.style.display = isAdmin ? 'inline-block' : 'none';
   }
 
+  // หากไม่ใช่ผู้ดูแลระบบ ให้ล้างตารางข้อมูลและปิดหน้าต่าง Admin ทั้งหมดเพื่อไม่ให้เหลือปุ่มลบ/จัดการใน DOM
+  if (!isAdmin) {
+    const admD70Body = document.getElementById('admD70TableBody');
+    if (admD70Body) admD70Body.innerHTML = '';
+    const admRolesBody = document.getElementById('adminRolesTableBody');
+    if (admRolesBody) admRolesBody.innerHTML = '';
+    ['adminData70Modal', 'adminRolesModal', 'updateContactsModal', 'emailConfigModal'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
+    if (typeof adminData70List !== 'undefined') adminData70List = [];
+    if (typeof parsedImportData70Rows !== 'undefined') parsedImportData70Rows = [];
+  }
+
   document.getElementById('chpFullName').textContent = currentMember.nname || '-';
   document.getElementById('chpPosition').textContent = currentMember.nposit || '-';
   document.getElementById('chpOffice').textContent = officeName;
@@ -608,10 +622,16 @@ function handleLogout() {
   if (btnMainAdminD70) btnMainAdminD70.style.display = 'none';
   const btnOpenRoles = document.getElementById('btnOpenAdminRolesModal');
   if (btnOpenRoles) btnOpenRoles.style.display = 'none';
-  ['data70Modal', 'adminData70Modal', 'adminRolesModal'].forEach((id) => {
+  ['data70Modal', 'adminData70Modal', 'adminRolesModal', 'updateContactsModal', 'emailConfigModal'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
+  const admD70Body = document.getElementById('admD70TableBody');
+  if (admD70Body) admD70Body.innerHTML = '';
+  const admRolesBody = document.getElementById('adminRolesTableBody');
+  if (admRolesBody) admRolesBody.innerHTML = '';
+  if (typeof adminData70List !== 'undefined') adminData70List = [];
+  if (typeof parsedImportData70Rows !== 'undefined') parsedImportData70Rows = [];
   showView('view-login');
   loadLoginStats();
 }
@@ -690,6 +710,8 @@ function setOtpChannel(channel) {
 function openOtpModal(defaultChannel = 'phone') {
   resetOtpModal();
   setOtpChannel(defaultChannel);
+  const admCfgWrap = document.getElementById('otpAdminEmailConfigWrap');
+  if (admCfgWrap) admCfgWrap.style.display = isCurrentUserAdmin() ? 'block' : 'none';
   const typedId = document.getElementById('usnm').value.trim();
   if (typedId.length === 13) {
     document.getElementById('otpIdno').value = typedId;
@@ -922,6 +944,10 @@ async function submitOtpReset() {
 // ตั้งค่าระบบส่งรหัส OTP เข้าอีเมลจริง (Gmail / Google Apps Script / Brevo)
 // ============================================================================
 async function openEmailConfigModal() {
+  if (!isCurrentUserAdmin()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   const modal = document.getElementById('emailConfigModal');
   if (!modal) return;
   modal.style.display = 'flex';
@@ -1048,6 +1074,10 @@ window.addEventListener('DOMContentLoaded', () => {
 let parsedExcelContacts = [];
 
 function openUpdateContactsModal() {
+  if (!isCurrentUserAdmin()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   const modal = document.getElementById('updateContactsModal');
   if (modal) modal.style.display = 'flex';
 }

@@ -757,8 +757,11 @@ async function triggerD70DuplicateCheck(fieldType) {
   }
 
   try {
+    const actorCid = getActiveActorCid();
     const res = await apiPost({
       action: 'check_data70_duplicate',
+      requester_cid: actorCid,
+      admin_cid: actorCid,
       cid,
       original_cid: d70OriginalCid,
       check_cid_conflict: d70IsNewRecord,
@@ -814,12 +817,20 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
   d70OriginalCid = cid;
   d70IsNewRecord = Boolean(isAdmin && isNewFromAdmin && cid.length !== 13);
   const cidInput = document.getElementById('d70_cid');
+  const lockHint = document.getElementById('d70CidLockHint');
   if (cidInput) {
     cidInput.value = cid;
-    // ผู้ใช้ทั่วไปล็อกช่องเลข 13 หลักเสมอไม่ให้แก้เป็นของคนอื่น; แอดมินแก้ได้เฉพาะตอนสร้างใหม่
-    cidInput.readOnly = !isAdmin || (!isNewFromAdmin && cid.length === 13);
-    cidInput.style.background = cidInput.readOnly ? '#e2e8f0' : '#ffffff';
-    cidInput.title = cidInput.readOnly ? 'ล็อกเลขประจำตัวประชาชน 13 หลัก (ไม่สามารถแก้ไขเป็นของบุคคลอื่นได้)' : '';
+    // ผู้ใช้ทั่วไปล็อกช่องเลข 13 หลักเป็นแบบอ่านอย่างเดียว (readOnly + disabled) เสมอ; แอดมินแก้ได้เฉพาะตอนสร้างใหม่
+    const isLocked = !isAdmin || (!isNewFromAdmin && cid.length === 13);
+    cidInput.readOnly = isLocked;
+    cidInput.disabled = isLocked;
+    cidInput.style.background = isLocked ? '#e2e8f0' : '#ffffff';
+    cidInput.style.color = isLocked ? '#475569' : '#0f172a';
+    cidInput.style.cursor = isLocked ? 'not-allowed' : 'text';
+    cidInput.title = isLocked ? 'ล็อกเลขประจำตัวประชาชน 13 หลัก (ไม่สามารถแก้ไขเป็นของบุคคลอื่นได้)' : '';
+    if (lockHint) {
+      lockHint.textContent = isLocked ? '(🔒 ล็อกเฉพาะเลขของท่าน อ่านอย่างเดียว)' : '(กรอกเลข 13 หลัก - ห้ามซ้ำคนอื่น)';
+    }
   }
 
   const searchHospInput = document.getElementById('d70SearchHosp');
@@ -852,7 +863,7 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
   }
 
   try {
-    const res = await apiPost({ action: 'get_data70', cid, admin_cid: loggedInCid });
+    const res = await apiPost({ action: 'get_data70', cid, requester_cid: loggedInCid, admin_cid: loggedInCid });
     if (res && !res.success && res.code === 'FORBIDDEN') {
       alert(res.message || '⛔ ไม่มีสิทธิ์เข้าถึงข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น');
       closeData70Modal();
@@ -1054,12 +1065,17 @@ function collectData70FormRecord() {
   const normPosNo = normalizeFullnameSpaces(document.getElementById('d70_position_no').value);
   document.getElementById('d70_position_no').value = normPosNo;
 
+  const isAdminUser = hasData70AdminPermission();
+  const loggedInCid = getActiveActorCid();
+  const rawFormCid = document.getElementById('d70_cid').value.replace(/[^0-9]/g, '').trim();
+  const safeCid = (!isAdminUser && loggedInCid.length === 13) ? loggedInCid : rawFormCid;
+
   const rec = {
     seq_no: Number(document.getElementById('d70_seq_no').value || 0),
     sml_seq: Number(document.getElementById('d70_sml_seq').value || 0),
     hname: document.getElementById('d70_hname').value.trim(),
     sml_size: document.getElementById('d70_sml_size').value.trim().toUpperCase(),
-    cid: document.getElementById('d70_cid').value.replace(/[^0-9]/g, '').trim(),
+    cid: safeCid,
     bank_account: document.getElementById('d70_bank_account').value.trim(),
     fullname: normName,
     birth_date: document.getElementById('d70_birth_date').value.trim(),
@@ -1154,6 +1170,7 @@ async function saveData70Form(e) {
 
     const res = await apiPost({
       action: 'save_data70',
+      requester_cid: loggedInCid,
       admin_cid: loggedInCid,
       record: rec
     });
@@ -1257,9 +1274,11 @@ async function loadAdminData70List() {
   }
 
   try {
+    const actorCid = getActiveActorCid();
     const res = await apiPost({
       action: 'list_data70',
-      admin_cid: getActiveActorCid(),
+      requester_cid: actorCid,
+      admin_cid: actorCid,
       hname,
       work_group,
       search
@@ -1338,7 +1357,8 @@ async function syncAllData70ToTbmain() {
     btn.textContent = '⏳ กำลังซิงก์ข้อมูลทั้งหมดลง tbmain...';
   }
   try {
-    const res = await apiPost({ action: 'sync_all_data70_to_tbmain', admin_cid: getActiveActorCid() });
+    const actorCid = getActiveActorCid();
+    const res = await apiPost({ action: 'sync_all_data70_to_tbmain', requester_cid: actorCid, admin_cid: actorCid });
     if (res && res.success) {
       alert('✅ ' + res.message);
     } else {
@@ -1356,12 +1376,13 @@ async function syncAllData70ToTbmain() {
 
 async function deleteAdminData70Row(cid, fullname) {
   if (!hasData70AdminPermission()) {
-    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    alert('⛔ ไม่มีสิทธิ์ลบข้อมูลบุคลากร เฉพาะผู้ดูแลระบบเท่านั้น');
     return;
   }
   if (!confirm(`ยืนยันการลบข้อมูล data70 ของ "${fullname || cid}" (เลข 13 หลัก: ${cid}) หรือไม่?`)) return;
   try {
-    const res = await apiPost({ action: 'delete_data70', cid, admin_cid: getActiveActorCid() });
+    const actorCid = getActiveActorCid();
+    const res = await apiPost({ action: 'delete_data70', cid, requester_cid: actorCid, admin_cid: actorCid });
     if (res && res.success) {
       await loadAdminData70List();
     } else {
@@ -1696,6 +1717,7 @@ async function confirmImportData70Batch() {
       const chunk = parsedImportData70Rows.slice(i, i + chunkSize);
       const res = await apiPost({
         action: 'import_data70_batch',
+        requester_cid: actorCid,
         admin_cid: actorCid,
         items: chunk
       });

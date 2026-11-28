@@ -1630,30 +1630,41 @@ export async function onRequest(context) {
     if (action === 'get_data70') {
       await ensureData70Table(db);
       await ensureAdminUsersTable(db);
-      const cid = cleanCid13(body.cid || url.searchParams.get('cid') || '');
-      if (cid.length !== 13) {
-        db.close();
-        return new Response(JSON.stringify({ success: false, message: 'กรุณาระบุเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
-      }
-
-      // ตรวจสอบสิทธิ์: ผู้ใช้ทั่วไปดูได้เฉพาะข้อมูลของตนเอง หากดูของคนอื่นต้องมีสิทธิ์ Admin
-      const actorCid = cleanCid13(
-        body.admin_cid ||
+      const requestedCid = cleanCid13(body.cid || url.searchParams.get('cid') || '');
+      const requesterCid = cleanCid13(
         body.requester_cid ||
-        url.searchParams.get('admin_cid') ||
+        body.admin_cid ||
         url.searchParams.get('requester_cid') ||
+        url.searchParams.get('admin_cid') ||
         ''
       );
-      if (!actorCid || actorCid !== cid) {
-        const actorStatus = await getAdminStatus(db, actorCid);
-        if (!actorStatus.isAdmin) {
+
+      if (requesterCid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({
+          success: false,
+          code: 'FORBIDDEN',
+          message: '⛔ ไม่พบข้อมูลยืนยันตัวตนผู้ใช้งาน (requester_cid) ไม่อนุญาตให้เข้าถึงข้อมูล'
+        }), { status: 403, headers: corsHeaders });
+      }
+
+      const actorStatus = await getAdminStatus(db, requesterCid);
+      // Strict Ownership Enforcement: ผู้ใช้ทั่วไปดูได้เฉพาะ WHERE cid = requester_cid เท่านั้น ห้ามดูของคนอื่น
+      if (!actorStatus.isAdmin) {
+        if (requestedCid && requestedCid !== requesterCid) {
           db.close();
           return new Response(JSON.stringify({
             success: false,
             code: 'FORBIDDEN',
-            message: '⛔ ไม่มีสิทธิ์เข้าถึงข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น'
+            message: '⛔ ไม่มีสิทธิ์เข้าถึงข้อมูลของบุคคลอื่น สามารถดูและแก้ไขได้เฉพาะข้อมูลของตนเองเท่านั้น'
           }), { status: 403, headers: corsHeaders });
         }
+      }
+
+      const cid = actorStatus.isAdmin ? (requestedCid || requesterCid) : requesterCid;
+      if (cid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'กรุณาระบุเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
       }
 
       const qD70 = await db.query(`SELECT * FROM personnel_data70 WHERE cid = ${sqlEsc(cid)} LIMIT 1;`);
@@ -1686,13 +1697,41 @@ export async function onRequest(context) {
 
     if (action === 'check_data70_duplicate') {
       await ensureData70Table(db);
-      const cid = String(body.cid || '').replace(/[^0-9]/g, '').trim();
-      const originalCid = String(body.original_cid || '').replace(/[^0-9]/g, '').trim();
+      await ensureAdminUsersTable(db);
+      const requesterCid = cleanCid13(
+        body.requester_cid ||
+        body.admin_cid ||
+        url.searchParams.get('requester_cid') ||
+        url.searchParams.get('admin_cid') ||
+        ''
+      );
+      const cid = cleanCid13(body.cid || '');
+      const originalCid = cleanCid13(body.original_cid || '');
       const checkCidConflict = Boolean(body.check_cid_conflict);
       const fullname = normalizeSpaces(body.fullname || '');
       const positionNo = normalizeSpaces(body.position_no || '');
 
-      const { duplicateCid, duplicateName, duplicatePosNo } = await checkData70Duplicates(db, cid, fullname, positionNo, originalCid, checkCidConflict);
+      if (requesterCid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({
+          success: false,
+          code: 'FORBIDDEN',
+          message: '⛔ ไม่พบข้อมูลยืนยันตัวตนผู้ใช้งาน (requester_cid)'
+        }), { status: 403, headers: corsHeaders });
+      }
+      const actorStatus = await getAdminStatus(db, requesterCid);
+      if (!actorStatus.isAdmin && cid && cid !== requesterCid) {
+        db.close();
+        return new Response(JSON.stringify({
+          success: false,
+          code: 'FORBIDDEN',
+          message: '⛔ ไม่มีสิทธิ์ตรวจสอบเลขประจำตัวประชาชนของบุคคลอื่น'
+        }), { status: 403, headers: corsHeaders });
+      }
+      const effectiveCid = actorStatus.isAdmin ? cid : requesterCid;
+      const effectiveOrigCid = actorStatus.isAdmin ? originalCid : requesterCid;
+
+      const { duplicateCid, duplicateName, duplicatePosNo } = await checkData70Duplicates(db, effectiveCid, fullname, positionNo, effectiveOrigCid, actorStatus.isAdmin ? checkCidConflict : false);
       db.close();
       return new Response(JSON.stringify({
         success: true,
@@ -1706,28 +1745,59 @@ export async function onRequest(context) {
       await ensureData70Table(db);
       await ensureAdminUsersTable(db);
       const rec = body.record || body || {};
-      const cid = cleanCid13(rec.cid || '');
-      const originalCid = cleanCid13(rec.original_cid || cid);
-      const isNewRecord = Boolean(rec.is_new_record);
-      if (cid.length !== 13) {
+      const targetCid = cleanCid13(rec.cid || '');
+      const rawOriginalCid = cleanCid13(rec.original_cid || targetCid);
+      const requesterCid = cleanCid13(
+        body.requester_cid ||
+        body.admin_cid ||
+        url.searchParams.get('requester_cid') ||
+        url.searchParams.get('admin_cid') ||
+        ''
+      );
+
+      if (requesterCid.length !== 13) {
         db.close();
-        return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชนต้องมี 13 หลัก' }), { headers: corsHeaders });
+        return new Response(JSON.stringify({
+          success: false,
+          code: 'FORBIDDEN',
+          message: '⛔ ไม่พบข้อมูลยืนยันตัวตนผู้ใช้งาน (requester_cid) ไม่อนุญาตให้บันทึกข้อมูล'
+        }), { status: 403, headers: corsHeaders });
       }
 
-      // ตรวจสอบสิทธิ์: บุคลากรทั่วไปแก้ไขได้เฉพาะข้อมูลเลข 13 หลักของตนเองเท่านั้น
-      // หากเพิ่ม/แก้ไขข้อมูลของบุคคลอื่น หรือเปลี่ยนเลข 13 หลัก ต้องมีสิทธิ์ Admin ในฐานข้อมูล
-      const actorCid = cleanCid13(body.admin_cid || body.requester_cid || '');
-      const isSelfEdit = actorCid.length === 13 && actorCid === cid && originalCid === cid;
-      if (!isSelfEdit) {
-        const actorStatus = await getAdminStatus(db, actorCid);
-        if (!actorStatus.isAdmin) {
+      const actorStatus = await getAdminStatus(db, requesterCid);
+      // Strict Ownership Enforcement: ผู้ใช้ทั่วไปบันทึก/แก้ไขได้เฉพาะ cid = requester_cid ของตนเองเท่านั้น
+      if (!actorStatus.isAdmin) {
+        if ((targetCid && targetCid !== requesterCid) || (rawOriginalCid && rawOriginalCid !== requesterCid)) {
           db.close();
           return new Response(JSON.stringify({
             success: false,
             code: 'FORBIDDEN',
-            message: '⛔ ไม่มีสิทธิ์เพิ่มหรือแก้ไขข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น'
+            message: '⛔ ไม่มีสิทธิ์เพิ่มหรือแก้ไขข้อมูลของบุคคลอื่น สามารถแก้ไขได้เฉพาะข้อมูลของตนเองเท่านั้น'
           }), { status: 403, headers: corsHeaders });
         }
+        // ยืนยันว่า requester_cid เป็นสมาชิกจริงในระบบ (tbmain หรือ personnel_data70)
+        const qValidMember = await db.query(`
+          SELECT 1 AS ok FROM tbmain WHERE TRIM(idno) COLLATE utf8_general_ci = ${sqlEsc(requesterCid)} COLLATE utf8_general_ci
+          UNION ALL
+          SELECT 1 AS ok FROM personnel_data70 WHERE TRIM(cid) COLLATE utf8_general_ci = ${sqlEsc(requesterCid)} COLLATE utf8_general_ci
+          LIMIT 1;
+        `);
+        if (!qValidMember.rows || qValidMember.rows.length === 0) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            code: 'FORBIDDEN',
+            message: '⛔ ไม่พบสิทธิ์ผู้ใช้งานในระบบสมาชิก ไม่อนุญาตให้บันทึกข้อมูล'
+          }), { status: 403, headers: corsHeaders });
+        }
+      }
+
+      const cid = actorStatus.isAdmin ? targetCid : requesterCid;
+      const originalCid = actorStatus.isAdmin ? (rawOriginalCid || cid) : requesterCid;
+      const isNewRecord = actorStatus.isAdmin ? Boolean(rec.is_new_record) : false;
+      if (cid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชนต้องมี 13 หลัก' }), { headers: corsHeaders });
       }
 
       const normFullname = normalizeSpaces(rec.fullname || '');
@@ -1960,10 +2030,22 @@ export async function onRequest(context) {
 
     if (action === 'delete_data70') {
       await ensureAdminUsersTable(db);
-      const auth = await requireAdminAuth(db, body, url, corsHeaders);
-      if (!auth.ok) {
+      const requesterCid = cleanCid13(
+        body.requester_cid ||
+        body.admin_cid ||
+        url.searchParams.get('requester_cid') ||
+        url.searchParams.get('admin_cid') ||
+        ''
+      );
+      const actorStatus = await getAdminStatus(db, requesterCid);
+      // ห้ามผู้ใช้ทั่วไปลบข้อมูลโดยเด็ดขาด (แม้จะเป็นเลข 13 หลักของตนเองก็ตาม) อนุญาตเฉพาะ Admin/Super Admin เท่านั้น
+      if (!actorStatus.isAdmin) {
         db.close();
-        return auth.response;
+        return new Response(JSON.stringify({
+          success: false,
+          code: 'FORBIDDEN',
+          message: '⛔ ไม่มีสิทธิ์ลบข้อมูลบุคลากร (ห้ามผู้ใช้งานทั่วไปลบข้อมูลแม้เป็นข้อมูลของตนเอง) เฉพาะผู้ดูแลระบบเท่านั้น'
+        }), { status: 403, headers: corsHeaders });
       }
       await ensureData70Table(db);
       const cid = String(body.cid || '').replace(/[^0-9]/g, '').trim();
