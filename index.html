@@ -265,7 +265,7 @@
       <tr>
         <td style="padding: 10px 18px 25px 18px;">
           <center>
-            <font size="-1" color="#CCCCCC" id="adminMenuTop">[ <a href="javascript:void(0)" onclick="openAdminData70Modal()" style="color:#15803d; font-weight:bold;">🗂️ จัดการฐานข้อมูลบุคลากร (data70)</a> | <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> | <a href="javascript:void(0)" onclick="openUpdateContactsModal()">อัปเดตเบอร์โทร/อีเมล (Excel / sheet1)</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()">ตั้งค่าส่งอีเมล OTP</a> ]</font>
+            <font size="-1" color="#CCCCCC" id="adminMenuTop" style="display:none;"></font>
           </center>
           <table cellspacing="0" cellpadding="3" width="100%" border="0">
             <tr>
@@ -283,7 +283,7 @@
                   <button type="button" onclick="openData70Modal()" style="background:linear-gradient(135deg,#1e40af,#2563eb); color:#ffffff; border:1px solid #1d4ed8; padding:8px 16px; border-radius:6px; font-size:14px; font-weight:bold; cursor:pointer; box-shadow:0 2px 6px rgba(37,99,235,0.25);">
                     👤 ข้อมูลส่วนบุคคล / ประวัติรับราชการ (บันทึกข้อมูล data70)
                   </button>
-                  <button type="button" onclick="openAdminData70Modal()" style="background:#f0fdf4; color:#15803d; border:1px solid #86efac; padding:8px 14px; border-radius:6px; font-size:13.5px; font-weight:bold; cursor:pointer; margin-left:4px;">
+                  <button type="button" id="btnOpenAdminData70Main" onclick="openAdminData70Modal()" style="display:none; background:#f0fdf4; color:#15803d; border:1px solid #86efac; padding:8px 14px; border-radius:6px; font-size:13.5px; font-weight:bold; cursor:pointer; margin-left:4px;">
                     🗂️ จัดการฐานข้อมูลบุคลากร (data70)
                   </button>
                 </div>
@@ -1216,6 +1216,9 @@
           <div id="admD70SummaryText" style="font-size:12.5px; color:#334155; margin-top:2px;">กำลังโหลดข้อมูล...</div>
         </div>
         <div style="display:flex; gap:6px; flex-wrap:wrap;">
+          <button type="button" id="btnOpenAdminRolesModal" onclick="openAdminRolesModal()" style="background:#b45309; color:#fff; border:none; padding:6px 12px; border-radius:5px; font-weight:bold; font-size:12.5px; cursor:pointer;">
+            🔐 จัดการสิทธิ์แอดมิน
+          </button>
           <button type="button" id="btnSyncAllD70ToMain" onclick="syncAllData70ToTbmain()" style="background:#7c3aed; color:#fff; border:none; padding:6px 12px; border-radius:5px; font-weight:bold; font-size:12.5px; cursor:pointer;">
             🔄 ซิงก์ข้อมูลทั้งหมดลงใบแจ้งเงินเดือน (tbmain)
           </button>
@@ -1297,6 +1300,72 @@
     </div>
   </div>
 
+  <!-- ==================================================================== -->
+  <!-- MODAL: 🔐 จัดการสิทธิ์แอดมิน (Admin Roles - เฉพาะ Super Admin / Admin) -->
+  <!-- ==================================================================== -->
+  <div id="adminRolesModal" class="modal-overlay" style="z-index:10050; overflow-y:auto; align-items:flex-start; padding-top:28px; padding-bottom:28px;">
+    <div class="modal-card" style="width:760px; max-width:96%; max-height:90vh; overflow-y:auto; padding:18px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:2px solid #b45309; padding-bottom:10px; margin-bottom:12px; gap:8px;">
+        <div>
+          <strong style="color:#92400e; font-size:16px;">🔐 จัดการสิทธิ์ผู้ดูแลระบบ (Admin Roles - ฐานข้อมูลบุคลากร data70)</strong>
+          <div style="font-size:12px; color:#64748b; margin-top:2px;">
+            กำหนดรายชื่อเจ้าหน้าที่ที่สามารถเข้าถึงเมนู "🗂️ จัดการฐานข้อมูลบุคลากร (data70)" ได้ (เลขประชาชน <code>3330100466968</code> เป็น Super Admin หลักถาวร)
+          </div>
+        </div>
+        <button type="button" onclick="closeAdminRolesModal()" style="border:none; background:#f1f5f9; padding:6px 12px; border-radius:4px; cursor:pointer; font-weight:bold;">✕</button>
+      </div>
+
+      <!-- ฟอร์มเพิ่มสิทธิ์แอดมินใหม่ -->
+      <div style="background:#fffbeb; border:1px solid #fcd34d; border-radius:6px; padding:12px; margin-bottom:14px;">
+        <div style="font-size:13px; font-weight:bold; color:#92400e; margin-bottom:8px;">
+          ➕ มอบสิทธิ์แอดมินให้เจ้าหน้าที่ (กรอกเลขประจำตัวประชาชน 13 หลัก)
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr auto; gap:8px; align-items:end;">
+          <div>
+            <label for="adminRoleCidInput" style="font-size:12px; font-weight:bold; display:block; margin-bottom:3px; color:#334155;">เลขประจำตัวประชาชน 13 หลัก:</label>
+            <div style="display:flex; gap:4px;">
+              <input type="text" id="adminRoleCidInput" maxlength="13" inputmode="numeric" oninput="onAdminRoleCidInput(event)" placeholder="กรอกเลขประชาชน 13 หลัก..." style="flex:1; padding:7px 9px; font-size:13.5px; font-family:Consolas, monospace; border:1px solid #d97706; border-radius:4px; background:#fff;">
+              <button type="button" onclick="lookupMemberForAdminRole()" style="background:#f59e0b; color:#fff; border:none; padding:7px 10px; border-radius:4px; font-size:12px; font-weight:bold; cursor:pointer; white-space:nowrap;">🔍 ค้นหา</button>
+            </div>
+          </div>
+          <div>
+            <label for="adminRoleFullnameInput" style="font-size:12px; font-weight:bold; display:block; margin-bottom:3px; color:#334155;">ชื่อ-สกุล (ดึงอัตโนมัติจากฐานข้อมูล):</label>
+            <input type="text" id="adminRoleFullnameInput" placeholder="ระบบจะค้นหาชื่อ-สกุลให้อัตโนมัติ..." style="width:100%; box-sizing:border-box; padding:7px 9px; font-size:13px; border:1px solid #cbd5e1; border-radius:4px; background:#f8fafc;">
+          </div>
+          <div>
+            <button type="button" id="btnAddAdminRole" onclick="addAdminRoleUser()" style="background:#15803d; color:#fff; border:none; padding:8px 14px; border-radius:5px; font-weight:bold; font-size:13px; cursor:pointer; white-space:nowrap;">
+              ➕ เพิ่มสิทธิ์แอดมิน
+            </button>
+          </div>
+        </div>
+        <div id="adminRoleLookupPreview" style="display:none; margin-top:8px; padding:7px 10px; border-radius:4px; font-size:12.5px;"></div>
+      </div>
+
+      <!-- ตารางรายชื่อผู้มีสิทธิ์แอดมินปัจจุบัน -->
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+        <strong style="font-size:13.5px; color:#1e293b;">📋 รายชื่อผู้มีสิทธิ์เข้าถึงระบบจัดการฐานข้อมูลบุคลากรปัจจุบัน (<span id="adminRolesCount">0</span> คน)</strong>
+        <button type="button" onclick="loadAdminRolesList()" style="background:#f1f5f9; color:#334155; border:1px solid #cbd5e1; padding:4px 10px; border-radius:4px; font-size:12px; cursor:pointer;">🔄 รีเฟรชรายชื่อ</button>
+      </div>
+      <div style="max-height:340px; overflow-y:auto; border:1px solid #cbd5e1; border-radius:6px;">
+        <table width="100%" border="1" cellpadding="7" cellspacing="0" style="border-collapse:collapse; font-size:12.5px;">
+          <thead style="background:#f1f5f9; position:sticky; top:0; z-index:2;">
+            <tr>
+              <th width="42">ลำดับ</th>
+              <th width="125">เลข 13 หลัก</th>
+              <th>ชื่อ-สกุล / ตำแหน่ง / สังกัด</th>
+              <th width="120">ระดับสิทธิ์</th>
+              <th width="145">มอบสิทธิ์โดย / วันที่</th>
+              <th width="95">จัดการ</th>
+            </tr>
+          </thead>
+          <tbody id="adminRolesTableBody">
+            <tr><td colspan="6" align="center" style="padding:14px; color:#64748b;">กำลังโหลดรายชื่อผู้ดูแลระบบ...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
   <!-- แถบจำลองข้อความ SMS แจ้งเตือนเข้าหมายเลขโทรศัพท์ -->
   <div id="smsPushBanner" style="display:none; position:fixed; top:14px; right:14px; z-index:99999; max-width:390px; background:#0f172a; color:#f8fafc; border-left:5px solid #22c55e; border-radius:8px; padding:12px 14px; box-shadow:0 10px 25px rgba(0,0,0,0.4); font-family:Tahoma, sans-serif; font-size:13px; line-height:1.5;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
@@ -1311,7 +1380,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20261127g"></script>
-  <script src="data70.js?v=20261127g"></script>
+  <script src="app.js?v=20261128a"></script>
+  <script src="data70.js?v=20261128a"></script>
 </BODY>
 </HTML>

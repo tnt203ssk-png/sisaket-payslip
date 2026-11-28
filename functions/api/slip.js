@@ -516,8 +516,102 @@ const DATA70_CHANGE_COLS_DDL = Array.from({ length: 14 }, (_, idx) => {
     change_level_${i} VARCHAR(100) DEFAULT 'ยังไม่ได้ปรับระดับ'`;
 }).join(',');
 
+const SUPER_ADMIN_CID = '3330100466968';
+
 function normalizeSpaces(str) {
   return String(str || '').trim().replace(/\s+/g, ' ');
+}
+
+function cleanCid13(val) {
+  return String(val || '').replace(/[^0-9]/g, '').trim();
+}
+
+async function ensureAdminUsersTable(db) {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS admin_users (
+      cid VARCHAR(13) PRIMARY KEY,
+      fullname VARCHAR(255) DEFAULT '',
+      role VARCHAR(50) DEFAULT 'admin',
+      granted_by VARCHAR(13) DEFAULT '',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
+  `);
+
+  // กำหนดให้เลขประชาชน 3330100466968 เป็น Super Admin หลักของระบบเสมอ (Root Admin ที่ไม่สามารถลบออกได้)
+  let rootName = 'นายธนโชติ ดวงตะวัน';
+  try {
+    const qRoot = await db.query(`
+      SELECT COALESCE(
+        (SELECT NULLIF(TRIM(fullname), '') FROM personnel_data70 WHERE TRIM(cid) COLLATE utf8_general_ci = ${sqlEsc(SUPER_ADMIN_CID)} COLLATE utf8_general_ci LIMIT 1),
+        (SELECT NULLIF(TRIM(nname), '') FROM tbmain WHERE TRIM(idno) COLLATE utf8_general_ci = ${sqlEsc(SUPER_ADMIN_CID)} COLLATE utf8_general_ci LIMIT 1),
+        'นายธนโชติ ดวงตะวัน'
+      ) AS fullname;
+    `);
+    if (qRoot.rows && qRoot.rows[0]?.fullname) {
+      rootName = normalizeSpaces(qRoot.rows[0].fullname);
+    }
+  } catch {}
+
+  await db.query(`
+    INSERT INTO admin_users (cid, fullname, role, granted_by)
+    VALUES (${sqlEsc(SUPER_ADMIN_CID)}, ${sqlEsc(rootName)}, 'super_admin', ${sqlEsc(SUPER_ADMIN_CID)})
+    ON DUPLICATE KEY UPDATE
+      role = 'super_admin',
+      fullname = CASE WHEN fullname IS NULL OR TRIM(fullname) = '' THEN VALUES(fullname) ELSE fullname END;
+  `);
+}
+
+async function getAdminStatus(db, rawCid) {
+  const cid = cleanCid13(rawCid);
+  if (cid.length !== 13) {
+    return { isAdmin: false, isSuperAdmin: false, role: 'user', cid: '' };
+  }
+  if (cid === SUPER_ADMIN_CID) {
+    return { isAdmin: true, isSuperAdmin: true, role: 'super_admin', cid };
+  }
+  await ensureAdminUsersTable(db);
+  const q = await db.query(`
+    SELECT cid, fullname, role
+    FROM admin_users
+    WHERE TRIM(cid) COLLATE utf8_general_ci = ${sqlEsc(cid)} COLLATE utf8_general_ci
+    LIMIT 1;
+  `);
+  if (q.rows && q.rows.length > 0) {
+    const r = q.rows[0];
+    const role = String(r.role || 'admin').trim().toLowerCase() || 'admin';
+    return {
+      isAdmin: true,
+      isSuperAdmin: role === 'super_admin',
+      role,
+      cid,
+      fullname: r.fullname || ''
+    };
+  }
+  return { isAdmin: false, isSuperAdmin: false, role: 'user', cid };
+}
+
+async function requireAdminAuth(db, body, url, corsHeaders) {
+  const adminCid = cleanCid13(
+    body.admin_cid ||
+    body.requester_cid ||
+    url.searchParams.get('admin_cid') ||
+    url.searchParams.get('requester_cid') ||
+    ''
+  );
+  const status = await getAdminStatus(db, adminCid);
+  if (!status.isAdmin) {
+    return {
+      ok: false,
+      adminCid,
+      status,
+      response: new Response(JSON.stringify({
+        success: false,
+        code: 'FORBIDDEN',
+        message: '⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น'
+      }), { status: 403, headers: corsHeaders })
+    };
+  }
+  return { ok: true, adminCid, status };
 }
 
 async function ensureData70Table(db) {
@@ -841,6 +935,7 @@ export async function onRequest(context) {
         : `m.idno = ${sqlEsc(idno)} AND m.passc = ${sqlEsc(pass)}`;
 
       await ensureData70Table(db);
+      await ensureAdminUsersTable(db);
 
       const qMember = await db.query(`
         SELECT m.noman,
@@ -886,7 +981,11 @@ export async function onRequest(context) {
       }
 
       const member = qMember.rows[0];
-      member.is_admin = Boolean(isAdminLogin || member.idno === '3330100466968' || member.idno === '3330700073550');
+      const adminStatus = await getAdminStatus(db, member.idno);
+      member.cid = cleanCid13(member.idno);
+      member.is_super_admin = Boolean(isAdminLogin || adminStatus.isSuperAdmin || member.cid === SUPER_ADMIN_CID);
+      member.is_admin = Boolean(isAdminLogin || adminStatus.isAdmin || member.is_super_admin);
+      member.admin_role = member.is_super_admin ? 'super_admin' : (member.is_admin ? (adminStatus.role || 'admin') : 'user');
 
       // Fetch all salary months for this member from tbdetail
       const qMonths = await db.query(`
@@ -1530,10 +1629,31 @@ export async function onRequest(context) {
     // ========================================================================
     if (action === 'get_data70') {
       await ensureData70Table(db);
-      const cid = String(body.cid || url.searchParams.get('cid') || '').replace(/[^0-9]/g, '').trim();
+      await ensureAdminUsersTable(db);
+      const cid = cleanCid13(body.cid || url.searchParams.get('cid') || '');
       if (cid.length !== 13) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'กรุณาระบุเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
+      }
+
+      // ตรวจสอบสิทธิ์: ผู้ใช้ทั่วไปดูได้เฉพาะข้อมูลของตนเอง หากดูของคนอื่นต้องมีสิทธิ์ Admin
+      const actorCid = cleanCid13(
+        body.admin_cid ||
+        body.requester_cid ||
+        url.searchParams.get('admin_cid') ||
+        url.searchParams.get('requester_cid') ||
+        ''
+      );
+      if (!actorCid || actorCid !== cid) {
+        const actorStatus = await getAdminStatus(db, actorCid);
+        if (!actorStatus.isAdmin) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            code: 'FORBIDDEN',
+            message: '⛔ ไม่มีสิทธิ์เข้าถึงข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น'
+          }), { status: 403, headers: corsHeaders });
+        }
       }
 
       const qD70 = await db.query(`SELECT * FROM personnel_data70 WHERE cid = ${sqlEsc(cid)} LIMIT 1;`);
@@ -1584,13 +1704,30 @@ export async function onRequest(context) {
 
     if (action === 'save_data70') {
       await ensureData70Table(db);
+      await ensureAdminUsersTable(db);
       const rec = body.record || body || {};
-      const cid = String(rec.cid || '').replace(/[^0-9]/g, '').trim();
-      const originalCid = String(rec.original_cid || cid).replace(/[^0-9]/g, '').trim();
+      const cid = cleanCid13(rec.cid || '');
+      const originalCid = cleanCid13(rec.original_cid || cid);
       const isNewRecord = Boolean(rec.is_new_record);
       if (cid.length !== 13) {
         db.close();
         return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชนต้องมี 13 หลัก' }), { headers: corsHeaders });
+      }
+
+      // ตรวจสอบสิทธิ์: บุคลากรทั่วไปแก้ไขได้เฉพาะข้อมูลเลข 13 หลักของตนเองเท่านั้น
+      // หากเพิ่ม/แก้ไขข้อมูลของบุคคลอื่น หรือเปลี่ยนเลข 13 หลัก ต้องมีสิทธิ์ Admin ในฐานข้อมูล
+      const actorCid = cleanCid13(body.admin_cid || body.requester_cid || '');
+      const isSelfEdit = actorCid.length === 13 && actorCid === cid && originalCid === cid;
+      if (!isSelfEdit) {
+        const actorStatus = await getAdminStatus(db, actorCid);
+        if (!actorStatus.isAdmin) {
+          db.close();
+          return new Response(JSON.stringify({
+            success: false,
+            code: 'FORBIDDEN',
+            message: '⛔ ไม่มีสิทธิ์เพิ่มหรือแก้ไขข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น'
+          }), { status: 403, headers: corsHeaders });
+        }
       }
 
       const normFullname = normalizeSpaces(rec.fullname || '');
@@ -1778,6 +1915,12 @@ export async function onRequest(context) {
     }
 
     if (action === 'list_data70') {
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
       await ensureData70Table(db);
       const hname = String(body.hname || url.searchParams.get('hname') || '').trim();
       const workGroup = String(body.work_group || url.searchParams.get('work_group') || '').trim();
@@ -1816,6 +1959,12 @@ export async function onRequest(context) {
     }
 
     if (action === 'delete_data70') {
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
       await ensureData70Table(db);
       const cid = String(body.cid || '').replace(/[^0-9]/g, '').trim();
       if (cid.length !== 13) {
@@ -1831,6 +1980,12 @@ export async function onRequest(context) {
     }
 
     if (action === 'import_data70_batch') {
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
       await ensureData70Table(db);
       const items = Array.isArray(body.items) ? body.items : [];
       if (items.length === 0) {
@@ -2050,6 +2205,12 @@ export async function onRequest(context) {
     }
 
     if (action === 'sync_all_data70_to_tbmain') {
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
       await ensureData70Table(db);
       // ซิงก์ข้อมูลจาก personnel_data70 ทั้งหมดลงตาราง tbmain, person และ tbdetail โดยเทียบเลขประจำตัวประชาชน 13 หลัก (idno = cid)
       await db.query(`
@@ -2092,6 +2253,222 @@ export async function onRequest(context) {
         success: true,
         matched_count: matchedCount,
         message: `ซิงก์ข้อมูลจาก personnel_data70 ลงตาราง tbmain และ tbdetail (เทียบเลข 13 หลักตรงกัน) สำเร็จ จำนวน ${matchedCount} คน!`
+      }), { headers: corsHeaders });
+    }
+
+    // ========================================================================
+    // 11. ระบบจัดการสิทธิ์ผู้ดูแลระบบ (admin_users) สำหรับเมนู data70
+    // ========================================================================
+    if (action === 'check_admin_role') {
+      await ensureAdminUsersTable(db);
+      const cid = cleanCid13(body.cid || body.admin_cid || url.searchParams.get('cid') || '');
+      const status = await getAdminStatus(db, cid);
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        cid: status.cid,
+        is_admin: status.isAdmin,
+        is_super_admin: status.isSuperAdmin,
+        role: status.role
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'list_admin_users') {
+      await ensureData70Table(db);
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
+
+      const qAdmins = await db.query(`
+        SELECT a.cid,
+               COALESCE(NULLIF(TRIM(d.fullname), ''), NULLIF(TRIM(m.nname), ''), NULLIF(TRIM(a.fullname), ''), '-') AS fullname,
+               a.role,
+               a.granted_by,
+               COALESCE(NULLIF(TRIM(dg.fullname), ''), NULLIF(TRIM(mg.nname), ''), a.granted_by, '-') AS granted_by_name,
+               DATE_FORMAT(a.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
+               COALESCE(NULLIF(TRIM(d.hname), ''), '') AS hname,
+               COALESCE(
+                 NULLIF(TRIM(CONCAT(COALESCE(d.current_position, ''), ' ', COALESCE(d.current_level, ''))), ''),
+                 NULLIF(TRIM(m.nposit), ''),
+                 ''
+               ) AS position
+        FROM admin_users a
+        LEFT JOIN personnel_data70 d ON TRIM(a.cid) COLLATE utf8_general_ci = TRIM(d.cid) COLLATE utf8_general_ci
+        LEFT JOIN tbmain m ON TRIM(a.cid) COLLATE utf8_general_ci = TRIM(m.idno) COLLATE utf8_general_ci
+        LEFT JOIN personnel_data70 dg ON TRIM(a.granted_by) COLLATE utf8_general_ci = TRIM(dg.cid) COLLATE utf8_general_ci
+        LEFT JOIN tbmain mg ON TRIM(a.granted_by) COLLATE utf8_general_ci = TRIM(mg.idno) COLLATE utf8_general_ci
+        ORDER BY CASE WHEN TRIM(a.cid) = ${sqlEsc(SUPER_ADMIN_CID)} THEN 0 ELSE 1 END ASC, a.created_at ASC;
+      `);
+
+      const rows = (qAdmins.rows || []).map((r) => {
+        const cleanR = cleanCid13(r.cid);
+        const isRoot = cleanR === SUPER_ADMIN_CID;
+        return {
+          ...r,
+          cid: cleanR,
+          role: isRoot ? 'super_admin' : (r.role || 'admin'),
+          is_root: isRoot
+        };
+      });
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        super_admin_cid: SUPER_ADMIN_CID,
+        rows
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'lookup_member_by_cid') {
+      await ensureData70Table(db);
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
+
+      const cid = cleanCid13(body.cid || url.searchParams.get('cid') || '');
+      if (cid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'กรุณากรอกเลขประจำตัวประชาชนให้ครบ 13 หลัก' }), { headers: corsHeaders });
+      }
+
+      const qLookup = await db.query(`
+        SELECT
+          ${sqlEsc(cid)} AS cid,
+          COALESCE(NULLIF(TRIM(d.fullname), ''), NULLIF(TRIM(m.nname), ''), '') AS fullname,
+          COALESCE(NULLIF(TRIM(d.hname), ''), '') AS hname,
+          COALESCE(
+            NULLIF(TRIM(CONCAT(COALESCE(d.current_position, ''), ' ', COALESCE(d.current_level, ''))), ''),
+            NULLIF(TRIM(m.nposit), ''),
+            ''
+          ) AS position,
+          COALESCE(NULLIF(TRIM(d.phone), ''), NULLIF(TRIM(m.mbphone), ''), '') AS phone
+        FROM (SELECT 1) dummy
+        LEFT JOIN personnel_data70 d ON TRIM(d.cid) COLLATE utf8_general_ci = ${sqlEsc(cid)} COLLATE utf8_general_ci
+        LEFT JOIN tbmain m ON TRIM(m.idno) COLLATE utf8_general_ci = ${sqlEsc(cid)} COLLATE utf8_general_ci
+        LIMIT 1;
+      `);
+
+      const row = qLookup.rows && qLookup.rows[0] ? qLookup.rows[0] : null;
+      const found = Boolean(row && row.fullname && row.fullname.trim() !== '');
+      const adminStatus = await getAdminStatus(db, cid);
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        found,
+        member: {
+          cid,
+          fullname: found ? normalizeSpaces(row.fullname) : '',
+          hname: row?.hname || '',
+          position: normalizeSpaces(row?.position || ''),
+          phone: row?.phone || '',
+          is_already_admin: adminStatus.isAdmin,
+          is_super_admin: adminStatus.isSuperAdmin,
+          role: adminStatus.role
+        }
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'add_admin_user') {
+      await ensureData70Table(db);
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
+
+      const targetCid = cleanCid13(body.cid || '');
+      if (targetCid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'กรุณากรอกเลขประจำตัวประชาชน 13 หลักให้ถูกต้อง' }), { headers: corsHeaders });
+      }
+
+      if (targetCid === SUPER_ADMIN_CID) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: `เลขประจำตัวประชาชน ${SUPER_ADMIN_CID} เป็น Super Admin หลักของระบบอยู่แล้ว` }), { headers: corsHeaders });
+      }
+
+      let fullname = normalizeSpaces(body.fullname || '');
+      if (!fullname) {
+        const qName = await db.query(`
+          SELECT COALESCE(
+            (SELECT NULLIF(TRIM(fullname), '') FROM personnel_data70 WHERE TRIM(cid) COLLATE utf8_general_ci = ${sqlEsc(targetCid)} COLLATE utf8_general_ci LIMIT 1),
+            (SELECT NULLIF(TRIM(nname), '') FROM tbmain WHERE TRIM(idno) COLLATE utf8_general_ci = ${sqlEsc(targetCid)} COLLATE utf8_general_ci LIMIT 1),
+            ''
+          ) AS fullname;
+        `);
+        fullname = normalizeSpaces(qName.rows[0]?.fullname || '');
+      }
+
+      if (!fullname) {
+        db.close();
+        return new Response(JSON.stringify({
+          success: false,
+          message: `ไม่พบเลขประจำตัวประชาชน ${targetCid} ในฐานข้อมูลบุคลากร (tbmain / personnel_data70) กรุณาตรวจสอบเลข 13 หลักหรือระบุชื่อ-สกุล`
+        }), { headers: corsHeaders });
+      }
+
+      const role = 'admin';
+      await db.query(`
+        INSERT INTO admin_users (cid, fullname, role, granted_by)
+        VALUES (${sqlEsc(targetCid)}, ${sqlEsc(fullname)}, ${sqlEsc(role)}, ${sqlEsc(auth.adminCid)})
+        ON DUPLICATE KEY UPDATE
+          fullname = VALUES(fullname),
+          role = VALUES(role),
+          granted_by = VALUES(granted_by);
+      `);
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        cid: targetCid,
+        fullname,
+        role,
+        granted_by: auth.adminCid,
+        message: `เพิ่มสิทธิ์ผู้ดูแลระบบ (Admin) ให้ "${fullname}" (${targetCid}) เรียบร้อยแล้ว`
+      }), { headers: corsHeaders });
+    }
+
+    if (action === 'remove_admin_user') {
+      await ensureAdminUsersTable(db);
+      const auth = await requireAdminAuth(db, body, url, corsHeaders);
+      if (!auth.ok) {
+        db.close();
+        return auth.response;
+      }
+
+      const targetCid = cleanCid13(body.cid || '');
+      if (targetCid.length !== 13) {
+        db.close();
+        return new Response(JSON.stringify({ success: false, message: 'เลขประจำตัวประชาชน 13 หลักไม่ถูกต้อง' }), { headers: corsHeaders });
+      }
+
+      if (targetCid === SUPER_ADMIN_CID) {
+        db.close();
+        return new Response(JSON.stringify({
+          success: false,
+          message: `⛔ ไม่สามารถลบสิทธิ์ Super Admin หลัก (${SUPER_ADMIN_CID}) ออกจากระบบได้`
+        }), { status: 403, headers: corsHeaders });
+      }
+
+      await db.query(`
+        DELETE FROM admin_users
+        WHERE TRIM(cid) COLLATE utf8_general_ci = ${sqlEsc(targetCid)} COLLATE utf8_general_ci
+          AND TRIM(cid) COLLATE utf8_general_ci <> ${sqlEsc(SUPER_ADMIN_CID)} COLLATE utf8_general_ci;
+      `);
+
+      db.close();
+      return new Response(JSON.stringify({
+        success: true,
+        cid: targetCid,
+        message: `ลบสิทธิ์ผู้ดูแลระบบของเลขประชาชน ${targetCid} เรียบร้อยแล้ว`
       }), { headers: corsHeaders });
     }
 

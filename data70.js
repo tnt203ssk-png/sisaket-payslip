@@ -777,20 +777,49 @@ async function triggerD70DuplicateCheck(fieldType) {
   return d70CurrentDuplicateState;
 }
 
+function getActiveActorCid() {
+  if (typeof getCurrentUserCid === 'function') return getCurrentUserCid();
+  if (typeof currentMember !== 'undefined' && currentMember) {
+    return String(currentMember.cid || currentMember.idno || '').replace(/[^0-9]/g, '').trim();
+  }
+  return '';
+}
+
+function hasData70AdminPermission() {
+  if (typeof isCurrentUserAdmin === 'function') return isCurrentUserAdmin();
+  const cid = getActiveActorCid();
+  return Boolean(cid === '3330100466968' || (typeof currentMember !== 'undefined' && currentMember && currentMember.is_admin === true));
+}
+
 // เปิดหน้าต่าง Modal บันทึกและแก้ไขข้อมูลส่วนบุคคล (data70)
 async function openData70Modal(targetCid, isNewFromAdmin) {
   initData70UI();
   const modal = document.getElementById('data70Modal');
   if (!modal) return;
 
-  const cid = String(targetCid || (typeof currentMember !== 'undefined' && currentMember ? currentMember.idno : '') || '').replace(/[^0-9]/g, '').trim();
+  const loggedInCid = getActiveActorCid();
+  const isAdmin = hasData70AdminPermission();
+  const requestedCid = String(targetCid || '').replace(/[^0-9]/g, '').trim();
+
+  // หากเป็นผู้ใช้งานทั่วไป ห้ามเปิดแก้ไขข้อมูลของคนอื่น ให้เปิดได้เฉพาะเลข 13 หลักของตนเองและล็อกช่อง CID เสมอ
+  if (!isAdmin) {
+    if (requestedCid && loggedInCid && requestedCid !== loggedInCid) {
+      alert('⛔ ไม่มีสิทธิ์เข้าถึงข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น');
+      return;
+    }
+    isNewFromAdmin = false;
+  }
+
+  const cid = (isAdmin && requestedCid) ? requestedCid : loggedInCid;
   d70OriginalCid = cid;
-  d70IsNewRecord = Boolean(isNewFromAdmin && cid.length !== 13);
+  d70IsNewRecord = Boolean(isAdmin && isNewFromAdmin && cid.length !== 13);
   const cidInput = document.getElementById('d70_cid');
   if (cidInput) {
     cidInput.value = cid;
-    cidInput.readOnly = !isNewFromAdmin && cid.length === 13;
+    // ผู้ใช้ทั่วไปล็อกช่องเลข 13 หลักเสมอไม่ให้แก้เป็นของคนอื่น; แอดมินแก้ได้เฉพาะตอนสร้างใหม่
+    cidInput.readOnly = !isAdmin || (!isNewFromAdmin && cid.length === 13);
     cidInput.style.background = cidInput.readOnly ? '#e2e8f0' : '#ffffff';
+    cidInput.title = cidInput.readOnly ? 'ล็อกเลขประจำตัวประชาชน 13 หลัก (ไม่สามารถแก้ไขเป็นของบุคคลอื่นได้)' : '';
   }
 
   const searchHospInput = document.getElementById('d70SearchHosp');
@@ -808,6 +837,11 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
   }
 
   if (cid.length !== 13) {
+    if (!isAdmin) {
+      alert('ไม่พบเลขประจำตัวประชาชน 13 หลักของบัญชีที่ล็อกอินอยู่');
+      closeData70Modal();
+      return;
+    }
     resetData70FormFields('');
     if (badgeEl) {
       badgeEl.textContent = '🆕 เพิ่มข้อมูลบุคลากรใหม่ (กรุณากรอกเลข 13 หลัก)';
@@ -818,7 +852,12 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
   }
 
   try {
-    const res = await apiPost({ action: 'get_data70', cid });
+    const res = await apiPost({ action: 'get_data70', cid, admin_cid: loggedInCid });
+    if (res && !res.success && res.code === 'FORBIDDEN') {
+      alert(res.message || '⛔ ไม่มีสิทธิ์เข้าถึงข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น');
+      closeData70Modal();
+      return;
+    }
     if (res && res.success && res.exists && res.record) {
       d70OriginalCid = res.record.cid || cid;
       d70IsNewRecord = false;
@@ -1064,10 +1103,16 @@ function collectData70FormRecord() {
 async function saveData70Form(e) {
   if (e) e.preventDefault();
   const rec = collectData70FormRecord();
+  const loggedInCid = getActiveActorCid();
+  const isAdmin = hasData70AdminPermission();
 
   if (rec.cid.length !== 13) {
     alert('กรุณาตรวจสอบเลขประจำตัวประชาชนให้ครบ 13 หลัก');
     switchData70Tab(1);
+    return;
+  }
+  if (!isAdmin && loggedInCid && rec.cid !== loggedInCid) {
+    alert('⛔ ไม่มีสิทธิ์แก้ไขหรือบันทึกข้อมูลของบุคคลอื่น เฉพาะผู้ดูแลระบบเท่านั้น');
     return;
   }
   if (!rec.fullname) {
@@ -1109,6 +1154,7 @@ async function saveData70Form(e) {
 
     const res = await apiPost({
       action: 'save_data70',
+      admin_cid: loggedInCid,
       record: rec
     });
     if (!res || !res.success) {
@@ -1174,9 +1220,17 @@ async function saveData70Form(e) {
 // ส่วนที่ 3: หน้าต่างสำหรับ Admin "🗂️ จัดการฐานข้อมูลบุคลากร (data70)"
 // ============================================================================
 async function openAdminData70Modal() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   initData70UI();
   const modal = document.getElementById('adminData70Modal');
   if (!modal) return;
+  const btnRoles = document.getElementById('btnOpenAdminRolesModal');
+  if (btnRoles) {
+    btnRoles.style.display = hasData70AdminPermission() ? 'inline-block' : 'none';
+  }
   modal.style.display = 'flex';
   await loadAdminData70List();
 }
@@ -1187,6 +1241,11 @@ function closeAdminData70Modal() {
 }
 
 async function loadAdminData70List() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    closeAdminData70Modal();
+    return;
+  }
   const hname = document.getElementById('admD70FilterHosp') ? document.getElementById('admD70FilterHosp').value : '';
   const work_group = document.getElementById('admD70FilterWorkGroup') ? document.getElementById('admD70FilterWorkGroup').value : '';
   const search = document.getElementById('admD70SearchInput') ? document.getElementById('admD70SearchInput').value.trim() : '';
@@ -1200,11 +1259,17 @@ async function loadAdminData70List() {
   try {
     const res = await apiPost({
       action: 'list_data70',
+      admin_cid: getActiveActorCid(),
       hname,
       work_group,
       search
     });
     if (!res || !res.success) {
+      if (res && res.code === 'FORBIDDEN') {
+        alert(res.message || '⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+        closeAdminData70Modal();
+        return;
+      }
       if (tbody) tbody.innerHTML = `<tr><td colspan="11" align="center" style="color:#dc2626; padding:14px;">${(res && res.message) || 'โหลดข้อมูลไม่สำเร็จ'}</td></tr>`;
       return;
     }
@@ -1248,6 +1313,10 @@ async function loadAdminData70List() {
 }
 
 function promptOpenData70ByCid() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   const cid = prompt('กรอกเลขประจำตัวประชาชน 13 หลัก ที่ต้องการเพิ่มหรือแก้ไขข้อมูล (ระบบจะดึงข้อมูลจาก tbmain ให้อัตโนมัติหากมี):', '');
   if (!cid) return;
   const cleanCid = cid.replace(/[^0-9]/g, '').trim();
@@ -1259,13 +1328,17 @@ function promptOpenData70ByCid() {
 }
 
 async function syncAllData70ToTbmain() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   const btn = document.getElementById('btnSyncAllD70ToMain');
   if (btn) {
     btn.disabled = true;
     btn.textContent = '⏳ กำลังซิงก์ข้อมูลทั้งหมดลง tbmain...';
   }
   try {
-    const res = await apiPost({ action: 'sync_all_data70_to_tbmain' });
+    const res = await apiPost({ action: 'sync_all_data70_to_tbmain', admin_cid: getActiveActorCid() });
     if (res && res.success) {
       alert('✅ ' + res.message);
     } else {
@@ -1282,9 +1355,13 @@ async function syncAllData70ToTbmain() {
 }
 
 async function deleteAdminData70Row(cid, fullname) {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   if (!confirm(`ยืนยันการลบข้อมูล data70 ของ "${fullname || cid}" (เลข 13 หลัก: ${cid}) หรือไม่?`)) return;
   try {
-    const res = await apiPost({ action: 'delete_data70', cid });
+    const res = await apiPost({ action: 'delete_data70', cid, admin_cid: getActiveActorCid() });
     if (res && res.success) {
       await loadAdminData70List();
     } else {
@@ -1300,6 +1377,10 @@ async function deleteAdminData70Row(cid, fullname) {
 // รักษาเลข 13 หลัก (cid) และเลขบัญชี (bank_account) เป็น Text ไม่ให้เพี้ยนเป็น E+12
 // ============================================================================
 function exportData70Excel() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   if (!adminData70List || adminData70List.length === 0) {
     alert('ยังไม่มีข้อมูลสำหรับส่งออก กรุณาโหลดข้อมูลก่อน');
     return;
@@ -1349,6 +1430,10 @@ function exportData70Excel() {
 }
 
 function exportData70Csv() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   if (!adminData70List || adminData70List.length === 0) {
     alert('ยังไม่มีข้อมูลสำหรับส่งออก กรุณาโหลดข้อมูลก่อน');
     return;
@@ -1586,6 +1671,10 @@ function handleData70FileSelect(e) {
 }
 
 async function confirmImportData70Batch() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
   if (!parsedImportData70Rows || parsedImportData70Rows.length === 0) {
     alert('กรุณาเลือกไฟล์ Excel หรือ CSV ตามรูปแบบ data70 ก่อน');
     return;
@@ -1601,11 +1690,13 @@ async function confirmImportData70Batch() {
     let totalImported = 0;
     let totalSynced = 0;
     const chunkSize = 50;
+    const actorCid = getActiveActorCid();
 
     for (let i = 0; i < parsedImportData70Rows.length; i += chunkSize) {
       const chunk = parsedImportData70Rows.slice(i, i + chunkSize);
       const res = await apiPost({
         action: 'import_data70_batch',
+        admin_cid: actorCid,
         items: chunk
       });
       if (!res || !res.success) {
@@ -1627,5 +1718,300 @@ async function confirmImportData70Batch() {
       btn.disabled = false;
       btn.textContent = '🚀 ยืนยันนำเข้าข้อมูลลงฐานข้อมูล personnel_data70';
     }
+  }
+}
+
+// ============================================================================
+// ส่วนที่ 4: หน้าต่างจัดการสิทธิ์แอดมิน (🔐 จัดการสิทธิ์แอดมิน - admin_users)
+// เฉพาะ Super Admin (3330100466968) และผู้ที่ได้รับสิทธิ์ Admin
+// ============================================================================
+let adminRoleLookupTimer = null;
+
+function escAdminHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function openAdminRolesModal() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
+  const modal = document.getElementById('adminRolesModal');
+  if (!modal) return;
+  const cidInput = document.getElementById('adminRoleCidInput');
+  const nameInput = document.getElementById('adminRoleFullnameInput');
+  const previewEl = document.getElementById('adminRoleLookupPreview');
+  if (cidInput) cidInput.value = '';
+  if (nameInput) nameInput.value = '';
+  if (previewEl) {
+    previewEl.style.display = 'none';
+    previewEl.innerHTML = '';
+  }
+  modal.style.display = 'flex';
+  await loadAdminRolesList();
+}
+
+function closeAdminRolesModal() {
+  const modal = document.getElementById('adminRolesModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function onAdminRoleCidInput(e) {
+  const el = e && e.target ? e.target : document.getElementById('adminRoleCidInput');
+  if (!el) return;
+  const clean = el.value.replace(/[^0-9]/g, '').slice(0, 13);
+  if (el.value !== clean) el.value = clean;
+
+  const previewEl = document.getElementById('adminRoleLookupPreview');
+  const nameInput = document.getElementById('adminRoleFullnameInput');
+  if (adminRoleLookupTimer) clearTimeout(adminRoleLookupTimer);
+
+  if (clean.length < 13) {
+    if (previewEl) previewEl.style.display = 'none';
+    if (nameInput) nameInput.value = '';
+    return;
+  }
+
+  adminRoleLookupTimer = setTimeout(() => {
+    lookupMemberForAdminRole();
+  }, 150);
+}
+
+async function lookupMemberForAdminRole() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
+  const cidInput = document.getElementById('adminRoleCidInput');
+  const nameInput = document.getElementById('adminRoleFullnameInput');
+  const previewEl = document.getElementById('adminRoleLookupPreview');
+  const cid = cidInput ? cidInput.value.replace(/[^0-9]/g, '').trim() : '';
+
+  if (cid.length !== 13) {
+    alert('กรุณากรอกเลขประจำตัวประชาชนให้ครบ 13 หลัก');
+    return;
+  }
+
+  if (previewEl) {
+    previewEl.style.display = 'block';
+    previewEl.style.background = '#fef9c3';
+    previewEl.style.border = '1px solid #fde047';
+    previewEl.style.color = '#854d0e';
+    previewEl.innerHTML = '⏳ กำลังค้นหาข้อมูลบุคลากรจากฐานข้อมูล...';
+  }
+
+  try {
+    const res = await apiPost({
+      action: 'lookup_member_by_cid',
+      admin_cid: getActiveActorCid(),
+      cid
+    });
+    if (!res || !res.success) {
+      if (previewEl) {
+        previewEl.style.background = '#fef2f2';
+        previewEl.style.border = '1px solid #fca5a5';
+        previewEl.style.color = '#b91c1c';
+        previewEl.innerHTML = `❌ ${escAdminHtml((res && res.message) || 'ไม่สามารถค้นหาข้อมูลได้')}`;
+      }
+      return;
+    }
+
+    const m = res.member || {};
+    if (res.found && m.fullname) {
+      if (nameInput) nameInput.value = m.fullname;
+      if (m.is_already_admin) {
+        const badge = m.is_super_admin ? '👑 Super Admin หลัก' : '🛡️ Admin';
+        if (previewEl) {
+          previewEl.style.background = '#eff6ff';
+          previewEl.style.border = '1px solid #93c5fd';
+          previewEl.style.color = '#1e40af';
+          previewEl.innerHTML = `ℹ️ พบข้อมูล: <b>${escAdminHtml(m.fullname)}</b> ${m.position ? `(${escAdminHtml(m.position)})` : ''} ${m.hname ? `— ${escAdminHtml(m.hname)}` : ''} | สถานะปัจจุบัน: <b>${badge} อยู่แล้ว</b>`;
+        }
+      } else {
+        if (previewEl) {
+          previewEl.style.background = '#f0fdf4';
+          previewEl.style.border = '1px solid #86efac';
+          previewEl.style.color = '#166534';
+          previewEl.innerHTML = `✅ พบข้อมูลในฐานระบบ: <b>${escAdminHtml(m.fullname)}</b> ${m.position ? `(${escAdminHtml(m.position)})` : ''} ${m.hname ? `— ${escAdminHtml(m.hname)}` : ''}`;
+        }
+      }
+    } else {
+      if (nameInput) nameInput.value = '';
+      if (previewEl) {
+        previewEl.style.background = '#fff7ed';
+        previewEl.style.border = '1px solid #fdba74';
+        previewEl.style.color = '#9a3412';
+        previewEl.innerHTML = `⚠️ ไม่พบเลข 13 หลัก <code>${escAdminHtml(cid)}</code> ในตาราง tbmain / personnel_data70 (หากต้องการมอบสิทธิ์ให้กรอกชื่อ-สกุลด้วยตนเองก่อนกดเพิ่ม)`;
+      }
+    }
+  } catch (err) {
+    if (previewEl) {
+      previewEl.style.background = '#fef2f2';
+      previewEl.style.border = '1px solid #fca5a5';
+      previewEl.style.color = '#b91c1c';
+      previewEl.innerHTML = `❌ เกิดข้อผิดพลาดในการค้นหา: ${escAdminHtml(err.message)}`;
+    }
+  }
+}
+
+async function loadAdminRolesList() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    closeAdminRolesModal();
+    return;
+  }
+  const tbody = document.getElementById('adminRolesTableBody');
+  const countEl = document.getElementById('adminRolesCount');
+  if (tbody) {
+    tbody.innerHTML = '<tr><td colspan="6" align="center" style="padding:14px; color:#64748b;">⏳ กำลังโหลดรายชื่อผู้ดูแลระบบ...</td></tr>';
+  }
+
+  try {
+    const res = await apiPost({
+      action: 'list_admin_users',
+      admin_cid: getActiveActorCid()
+    });
+    if (!res || !res.success) {
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="6" align="center" style="padding:14px; color:#dc2626;">${escAdminHtml((res && res.message) || 'โหลดรายชื่อไม่สำเร็จ')}</td></tr>`;
+      }
+      return;
+    }
+
+    const rows = res.rows || [];
+    if (countEl) countEl.textContent = String(rows.length);
+
+    if (!tbody) return;
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="6" align="center" style="padding:14px; color:#64748b;">ยังไม่มีรายชื่อผู้ดูแลระบบ</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = rows.map((r, idx) => {
+      const isRoot = Boolean(r.is_root || r.cid === '3330100466968' || r.role === 'super_admin');
+      const roleBadge = isRoot
+        ? '<span style="background:#fef3c7; color:#92400e; border:1px solid #f59e0b; padding:3px 8px; border-radius:12px; font-weight:bold; font-size:11.5px; white-space:nowrap;">👑 Super Admin หลัก</span>'
+        : '<span style="background:#dcfce7; color:#166534; border:1px solid #86efac; padding:3px 8px; border-radius:12px; font-weight:bold; font-size:11.5px; white-space:nowrap;">🛡️ Admin</span>';
+
+      const subInfo = [r.position, r.hname].filter(Boolean).join(' • ');
+      const actionCell = isRoot
+        ? '<span style="color:#64748b; font-size:11.5px; font-weight:bold;">🔒 สิทธิ์หลัก (ลบไม่ได้)</span>'
+        : `<button type="button" onclick="removeAdminRoleUser('${escAdminHtml(r.cid)}', '${escAdminHtml((r.fullname || '').replace(/'/g, ''))}')" style="background:#fee2e2; color:#b91c1c; border:1px solid #fca5a5; padding:4px 9px; border-radius:4px; font-size:12px; cursor:pointer; font-weight:bold;">🗑️ ลบสิทธิ์</button>`;
+
+      return `
+        <tr style="border-bottom:1px solid #e2e8f0; ${isRoot ? 'background:#fffbeb;' : ''}">
+          <td align="center">${idx + 1}</td>
+          <td align="center" style="font-family:Consolas, monospace; font-weight:bold; color:#1e3a8a;">${escAdminHtml(r.cid)}</td>
+          <td align="left">
+            <b>${escAdminHtml(r.fullname || '-')}</b>
+            ${subInfo ? `<div style="font-size:11.5px; color:#64748b; margin-top:2px;">${escAdminHtml(subInfo)}</div>` : ''}
+          </td>
+          <td align="center">${roleBadge}</td>
+          <td align="center" style="font-size:11.5px; color:#475569;">
+            <div>${escAdminHtml(r.granted_by_name || r.granted_by || '-')}</div>
+            <div style="color:#94a3b8; font-size:11px;">${escAdminHtml(r.created_at || '')}</div>
+          </td>
+          <td align="center">${actionCell}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (err) {
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="6" align="center" style="padding:14px; color:#dc2626;">เกิดข้อผิดพลาด: ${escAdminHtml(err.message)}</td></tr>`;
+    }
+  }
+}
+
+async function addAdminRoleUser() {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
+  const cidInput = document.getElementById('adminRoleCidInput');
+  const nameInput = document.getElementById('adminRoleFullnameInput');
+  const previewEl = document.getElementById('adminRoleLookupPreview');
+  const btn = document.getElementById('btnAddAdminRole');
+
+  const cid = cidInput ? cidInput.value.replace(/[^0-9]/g, '').trim() : '';
+  const fullname = nameInput ? nameInput.value.trim() : '';
+
+  if (cid.length !== 13) {
+    alert('กรุณากรอกเลขประจำตัวประชาชนให้ครบ 13 หลัก');
+    if (cidInput) cidInput.focus();
+    return;
+  }
+  if (cid === '3330100466968') {
+    alert('เลขประจำตัวประชาชน 3330100466968 เป็น Super Admin หลักของระบบอยู่แล้ว');
+    return;
+  }
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ กำลังเพิ่มสิทธิ์...';
+  }
+
+  try {
+    const res = await apiPost({
+      action: 'add_admin_user',
+      admin_cid: getActiveActorCid(),
+      cid,
+      fullname
+    });
+    if (!res || !res.success) {
+      alert((res && res.message) || 'ไม่สามารถเพิ่มสิทธิ์แอดมินได้');
+      return;
+    }
+
+    alert('✅ ' + res.message);
+    if (cidInput) cidInput.value = '';
+    if (nameInput) nameInput.value = '';
+    if (previewEl) {
+      previewEl.style.display = 'none';
+      previewEl.innerHTML = '';
+    }
+    await loadAdminRolesList();
+  } catch (err) {
+    alert('เกิดข้อผิดพลาดในการเพิ่มสิทธิ์แอดมิน: ' + err.message);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = '➕ เพิ่มสิทธิ์แอดมิน';
+    }
+  }
+}
+
+async function removeAdminRoleUser(cid, fullname) {
+  if (!hasData70AdminPermission()) {
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
+    return;
+  }
+  const cleanCid = String(cid || '').replace(/[^0-9]/g, '').trim();
+  if (cleanCid === '3330100466968') {
+    alert('⛔ ไม่สามารถลบสิทธิ์ Super Admin หลัก (3330100466968) ออกจากระบบได้');
+    return;
+  }
+  if (!confirm(`ยืนยันการลบสิทธิ์ผู้ดูแลระบบ (Admin) ของ "${fullname || cleanCid}" (เลข 13 หลัก: ${cleanCid}) หรือไม่?`)) {
+    return;
+  }
+
+  try {
+    const res = await apiPost({
+      action: 'remove_admin_user',
+      admin_cid: getActiveActorCid(),
+      cid: cleanCid
+    });
+    if (!res || !res.success) {
+      alert((res && res.message) || 'ไม่สามารถลบสิทธิ์แอดมินได้');
+      return;
+    }
+    alert('✅ ' + res.message);
+    await loadAdminRolesList();
+  } catch (err) {
+    alert('เกิดข้อผิดพลาดในการลบสิทธิ์แอดมิน: ' + err.message);
   }
 }

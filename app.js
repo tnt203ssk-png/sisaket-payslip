@@ -87,6 +87,10 @@ async function handleLogin(e) {
     }
 
     currentMember = data.member;
+    if (currentMember) {
+      currentMember.cid = String(currentMember.cid || currentMember.idno || '').replace(/[^0-9]/g, '').trim();
+    }
+    window.currentUser = currentMember;
     currentMonths = data.months || [];
     sessionStorage.setItem('SISAKET_SLIP_USER', JSON.stringify({ idno, password }));
 
@@ -102,18 +106,33 @@ async function handleLogin(e) {
   }
 }
 
+const SUPER_ADMIN_CID = '3330100466968';
+
+function getCurrentUserCid() {
+  const user = currentMember || window.currentUser || null;
+  if (!user) return '';
+  return String(user.cid || user.idno || '').replace(/[^0-9]/g, '').trim();
+}
+
+function isCurrentUserSuperAdmin() {
+  const user = currentMember || window.currentUser || null;
+  if (!user) return false;
+  const cid = getCurrentUserCid();
+  return Boolean(cid === SUPER_ADMIN_CID || user.is_super_admin === true || user.admin_role === 'super_admin');
+}
+
 function isCurrentUserAdmin() {
-  return Boolean(
-    currentMember &&
-    (currentMember.is_admin || currentMember.idno === '3330100466968' || currentMember.idno === '3330700073550')
-  );
+  const user = currentMember || window.currentUser || null;
+  if (!user) return false;
+  const cid = getCurrentUserCid();
+  return Boolean(cid === SUPER_ADMIN_CID || user.is_super_admin === true || user.is_admin === true);
 }
 
 function handleAdminMenuClick() {
   if (isCurrentUserAdmin()) {
     openOtpModal();
   } else {
-    alert('เมนูนี้สำหรับผู้ดูแลระบบ (Admin) เท่านั้น');
+    alert('⛔ ไม่มีสิทธิ์เข้าถึงเมนูนี้ เฉพาะผู้ดูแลระบบเท่านั้น');
   }
 }
 
@@ -124,13 +143,32 @@ function populateMemberHeader() {
   document.getElementById('userPosition').textContent = currentMember.nposit || '-';
   document.getElementById('userOffice').textContent = officeName;
 
+  const isAdmin = isCurrentUserAdmin();
+  const isSuper = isCurrentUserSuperAdmin();
+
   const admTop = document.getElementById('adminMenuTop');
   if (admTop) {
-    if (isCurrentUserAdmin()) {
-      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="openAdminData70Modal()" style="color:#15803d; font-weight:bold;">🗂️ จัดการฐานข้อมูลบุคลากร (data70)</a> | <a href="javascript:void(0)" onclick="openOtpModal()" style="color:#1e40af; font-weight:bold;">🛡️ Admin: ค้นหา/ดูรหัส OTP</a> | <a href="javascript:void(0)" onclick="openUpdateContactsModal()" style="color:#1d4ed8;">📂 อัปเดตเบอร์โทร/อีเมล</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()" style="color:#0f766e;">⚙️ ตั้งค่าอีเมล OTP</a> ]';
+    if (isAdmin) {
+      const roleLabel = isSuper ? '👑 Super Admin' : '🛡️ Admin';
+      admTop.style.display = 'inline';
+      admTop.innerHTML = `[ <span style="color:#b45309; font-weight:bold;">${roleLabel}</span> | <a href="javascript:void(0)" onclick="openAdminData70Modal()" style="color:#15803d; font-weight:bold;">🗂️ จัดการฐานข้อมูลบุคลากร (data70)</a> | <a href="javascript:void(0)" onclick="openOtpModal()" style="color:#1e40af; font-weight:bold;">🛡️ Admin: ค้นหา/ดูรหัส OTP</a> | <a href="javascript:void(0)" onclick="openUpdateContactsModal()" style="color:#1d4ed8;">📂 อัปเดตเบอร์โทร/อีเมล</a> | <a href="javascript:void(0)" onclick="openEmailConfigModal()" style="color:#0f766e;">⚙️ ตั้งค่าอีเมล OTP</a> ]`;
     } else {
-      admTop.innerHTML = '[ <a href="javascript:void(0)" onclick="handleAdminMenuClick()">Admin</a> | <a href="javascript:void(0)" onclick="openAdminData70Modal()">🗂️ จัดการฐานข้อมูลบุคลากร (data70)</a> ]';
+      // ผู้ใช้งานทั่วไป: ซ่อนเมนูจัดการฐานข้อมูลบุคลากร (data70) และเมนูแอดมินทั้งหมด
+      admTop.innerHTML = '';
+      admTop.style.display = 'none';
     }
+  }
+
+  // ปุ่ม "🗂️ จัดการฐานข้อมูลบุคลากร (data70)" ในหน้าหลัก: แสดงเฉพาะ Super Admin (3330100466968) และ Admin ที่ได้รับสิทธิ์
+  const btnMainAdminD70 = document.getElementById('btnOpenAdminData70Main');
+  if (btnMainAdminD70) {
+    btnMainAdminD70.style.display = isAdmin ? 'inline-block' : 'none';
+  }
+
+  // ปุ่ม "🔐 จัดการสิทธิ์แอดมิน" ภายในหน้าต่าง data70: แสดงเฉพาะเมื่อมีสิทธิ์ Admin/Super Admin
+  const btnOpenRoles = document.getElementById('btnOpenAdminRolesModal');
+  if (btnOpenRoles) {
+    btnOpenRoles.style.display = isAdmin ? 'inline-block' : 'none';
   }
 
   document.getElementById('chpFullName').textContent = currentMember.nname || '-';
@@ -557,9 +595,23 @@ async function handleChangePassword(e) {
 
 function handleLogout() {
   currentMember = null;
+  window.currentUser = null;
   currentMonths = [];
   sessionStorage.removeItem('SISAKET_SLIP_USER');
   document.getElementById('pswd').value = '';
+  const admTop = document.getElementById('adminMenuTop');
+  if (admTop) {
+    admTop.innerHTML = '';
+    admTop.style.display = 'none';
+  }
+  const btnMainAdminD70 = document.getElementById('btnOpenAdminData70Main');
+  if (btnMainAdminD70) btnMainAdminD70.style.display = 'none';
+  const btnOpenRoles = document.getElementById('btnOpenAdminRolesModal');
+  if (btnOpenRoles) btnOpenRoles.style.display = 'none';
+  ['data70Modal', 'adminData70Modal', 'adminRolesModal'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  });
   showView('view-login');
   loadLoginStats();
 }
