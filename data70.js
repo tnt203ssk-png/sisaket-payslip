@@ -153,11 +153,13 @@ const DATA70_POSITIONS = [
   "นักวิชาการสาธารณสุข",
   "นักสาธารณสุข",
   "พยาบาลวิชาชีพ",
+  "พยาบาลเทคนิค",
   "แพทย์แผนไทย",
   "เภสัชกร",
   "แพทย์",
   "ทันตแพทย์",
   "ผู้อำนวยการโรงพยาบาลส่งเสริมสุขภาพตำบล",
+  "ลูกจ้างประจำ",
   "ยังไม่ได้ปรับเปลี่ยนตำแหน่ง"
 ];
 
@@ -177,6 +179,7 @@ const DATA70_LEVELS = [
   "5",
   "6",
   "7",
+  "ไม่มี",
   "ยังไม่ได้เลื่อนระดับ",
   "ยังไม่ได้ปรับระดับ"
 ];
@@ -273,7 +276,63 @@ const DATA70_WORK_GROUPS = [
   "กลุ่มเวชปฏิบัติ"
 ];
 
-// 6. โครงสร้างคอลัมน์มาตรฐานชีต data70 สำหรับ Import / Export Excel & CSV (73/74 คอลัมน์ รวมกลุ่มงาน)
+// 5.2 Master Data: เกณฑ์คำนวณค่าเล่าเรียนบุตร คนที่ 1-3 (3 ประเภทสถานศึกษา x 7 ระดับชั้น = 21 เงื่อนไข)
+const DATA70_CHILD_SCHOOL_TYPES = [
+  "รัฐบาล",
+  "เอกชนที่รับเงินอุดหนุน",
+  "เอกชนที่ไม่รับเงินอุดหนุน"
+];
+
+const DATA70_CHILD_GRADES = [
+  "อนุบาล",
+  "ประถมศึกษา",
+  "มัธยมต้น",
+  "มัธยมปลาย",
+  "ปวช./อาชีวะ",
+  "ปวส./อนุปริญญา",
+  "ป.ตรี"
+];
+
+const DATA70_CHILD_TUITION_RATES = {
+  "รัฐบาล": {
+    "อนุบาล": 5800,
+    "ประถมศึกษา": 4000,
+    "มัธยมต้น": 4800,
+    "มัธยมปลาย": 4800,
+    "ปวช./อาชีวะ": 4800,
+    "ปวส./อนุปริญญา": 13700,
+    "ป.ตรี": 25000
+  },
+  "เอกชนที่รับเงินอุดหนุน": {
+    "อนุบาล": 4800,
+    "ประถมศึกษา": 4200,
+    "มัธยมต้น": 3300,
+    "มัธยมปลาย": 3200,
+    "ปวช./อาชีวะ": 7200,
+    "ปวส./อนุปริญญา": 25000,
+    "ป.ตรี": 25000
+  },
+  "เอกชนที่ไม่รับเงินอุดหนุน": {
+    "อนุบาล": 13600,
+    "ประถมศึกษา": 13200,
+    "มัธยมต้น": 15800,
+    "มัธยมปลาย": 16200,
+    "ปวช./อาชีวะ": 24400,
+    "ปวส./อนุปริญญา": 25000,
+    "ป.ตรี": 25000
+  }
+};
+
+function getChildTuitionRate(schoolType, grade) {
+  const st = String(schoolType || '').trim();
+  const gr = String(grade || '').trim();
+  if (!st || !gr) return 0;
+  const typeMap = DATA70_CHILD_TUITION_RATES[st];
+  if (!typeMap) return 0;
+  return Object.prototype.hasOwnProperty.call(typeMap, gr) ? typeMap[gr] : 0;
+}
+
+// 6. โครงสร้างคอลัมน์มาตรฐานชีต data70 สำหรับ Import / Export Excel & CSV (83 คอลัมน์ รวมกลุ่มงานและค่าเล่าเรียนบุตร 1-3)
 const DATA70_EXPORT_COLUMNS = [
   { key: "seq_no", header: "ลำดับ" },
   { key: "sml_seq", header: "ลำดับsml" },
@@ -316,7 +375,16 @@ for (let i = 1; i <= 14; i++) {
 }
 DATA70_EXPORT_COLUMNS.push(
   { key: "phone", header: "หมายเลขโทรศัพท์", isText: true },
-  { key: "email", header: "อีเมล" }
+  { key: "email", header: "อีเมล" },
+  { key: "child1_school_type", header: "ประเภทสถานศึกษา 1" },
+  { key: "child1_grade", header: "ระดับชั้น 1" },
+  { key: "child1_tuition", header: "จำนวนเงิน 1", isNum: true },
+  { key: "child2_school_type", header: "ประเภทสถานศึกษา 2" },
+  { key: "child2_grade", header: "ระดับชั้น 2" },
+  { key: "child2_tuition", header: "จำนวนเงิน 2", isNum: true },
+  { key: "child3_school_type", header: "ประเภทสถานศึกษา 3" },
+  { key: "child3_grade", header: "ระดับชั้น 3" },
+  { key: "child3_tuition", header: "จำนวนเงิน 3", isNum: true }
 );
 
 let data70Initialized = false;
@@ -343,6 +411,7 @@ function splitPositionAndLevel(rawPosit) {
   const sNorm = s.replace(/ฏิ/g, 'ฎิ');
   const sortedLevels = [...DATA70_LEVELS].sort((a, b) => b.length - a.length);
   for (const lvl of sortedLevels) {
+    if (lvl === 'ไม่มี' || lvl === 'ยังไม่ได้เลื่อนระดับ' || lvl === 'ยังไม่ได้ปรับระดับ') continue;
     const lvlNorm = lvl.replace(/ฏิ/g, 'ฎิ');
     if (lvlNorm.length >= 2 && sNorm.endsWith(lvlNorm)) {
       const pos = s.slice(0, s.length - lvlNorm.length).trim();
@@ -412,6 +481,12 @@ function initData70UI() {
   populateSelectOptions(document.getElementById('d70_coop_member'), DATA70_COOPS, '-- เลือกสหกรณ์ออมทรัพย์ --');
   populateSelectOptions(document.getElementById('d70_first_position'), DATA70_POSITIONS, '-- เลือกตำแหน่งบรรจุครั้งแรก --');
   populateSelectOptions(document.getElementById('d70_first_level'), DATA70_LEVELS, '-- เลือกระดับบรรจุครั้งแรก --');
+
+  // เติม Dropdown ค่าเล่าเรียนบุตร คนที่ 1 - 3
+  for (let c = 1; c <= 3; c++) {
+    populateSelectOptions(document.getElementById(`d70_child${c}_school_type`), DATA70_CHILD_SCHOOL_TYPES, '-- ไม่ระบุ/ไม่มี --');
+    populateSelectOptions(document.getElementById(`d70_child${c}_grade`), DATA70_CHILD_GRADES, '-- ไม่ระบุ/ไม่มี --');
+  }
 
   // สร้างการ์ดประวัติการเปลี่ยนตำแหน่ง/ระดับ ครั้งที่ 1 - 14 ในแท็บ 4
   const container = document.getElementById('d70HistoryContainer');
@@ -558,6 +633,56 @@ function fillRemainingD70Unchanged() {
       if (lEl) lEl.value = 'ยังไม่ได้ปรับระดับ';
     }
   }
+}
+
+// คำนวณจำนวนเงินค่าเล่าเรียนบุตรแต่ละคนอัตโนมัติตามตารางเกณฑ์ 21 เงื่อนไข
+function onD70ChildTuitionSelectChange(childIdx) {
+  const stEl = document.getElementById(`d70_child${childIdx}_school_type`);
+  const grEl = document.getElementById(`d70_child${childIdx}_grade`);
+  const amtEl = document.getElementById(`d70_child${childIdx}_tuition`);
+  if (!stEl || !grEl || !amtEl) return;
+
+  const rate = getChildTuitionRate(stEl.value, grEl.value);
+  amtEl.value = String(rate);
+  syncD70ChildTuitionTotal(true);
+}
+
+// รวมค่าเล่าเรียนบุตรคนที่ 1-3 และเชื่อมโยงไปยังช่อง "ค่าเล่าเรียนบุตร" หลัก และ "รวมรายรับ" ทันที
+function syncD70ChildTuitionTotal(forceUpdateMain) {
+  const numVal = (id) => {
+    const el = document.getElementById(id);
+    if (!el) return 0;
+    const n = Number(String(el.value || '0').replace(/,/g, '').trim());
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  const strVal = (id) => {
+    const el = document.getElementById(id);
+    return el ? String(el.value || '').trim() : '';
+  };
+
+  const c1 = numVal('d70_child1_tuition');
+  const c2 = numVal('d70_child2_tuition');
+  const c3 = numVal('d70_child3_tuition');
+  const sum = c1 + c2 + c3;
+
+  const sumBadgeEl = document.getElementById('d70_children_tuition_sum');
+  if (sumBadgeEl) {
+    sumBadgeEl.textContent = sum.toLocaleString('th-TH', { maximumFractionDigits: 2 });
+  }
+
+  const hasAnyChildDetail = Boolean(
+    c1 > 0 || c2 > 0 || c3 > 0 ||
+    strVal('d70_child1_school_type') || strVal('d70_child1_grade') ||
+    strVal('d70_child2_school_type') || strVal('d70_child2_grade') ||
+    strVal('d70_child3_school_type') || strVal('d70_child3_grade')
+  );
+
+  const mainTuitionEl = document.getElementById('d70_child_tuition');
+  if (mainTuitionEl && (forceUpdateMain || hasAnyChildDetail)) {
+    mainTuitionEl.value = Number.isInteger(sum) ? String(sum) : sum.toFixed(2);
+  }
+
+  calcD70TotalIncome();
 }
 
 // คำนวณรวมรายรับแบบ Real-time (เงินเดือน + ค่าตอบแทน + ประจำตำแหน่ง + พ.ต.ส. + พ.ส.ร. + ค่าเช่าบ้าน + ค่าเล่าเรียนบุตร + กบข. + ฉ.11)
@@ -918,7 +1043,16 @@ async function openData70Modal(targetCid, isNewFromAdmin) {
         first_position: splitPos.pos || '',
         first_level: '',
         phone: (fbMem.mbphone && fbMem.mbphone !== '0') ? fbMem.mbphone : '',
-        email: fbMem.email || ''
+        email: fbMem.email || '',
+        child1_school_type: '',
+        child1_grade: '',
+        child1_tuition: 0,
+        child2_school_type: '',
+        child2_grade: '',
+        child2_tuition: 0,
+        child3_school_type: '',
+        child3_grade: '',
+        child3_tuition: 0
       };
       for (let i = 1; i <= 14; i++) {
         autoRec[`change_date_${i}`] = '';
@@ -969,7 +1103,16 @@ function resetData70FormFields(cid) {
     first_position: '',
     first_level: '',
     phone: '',
-    email: ''
+    email: '',
+    child1_school_type: '',
+    child1_grade: '',
+    child1_tuition: 0,
+    child2_school_type: '',
+    child2_grade: '',
+    child2_tuition: 0,
+    child3_school_type: '',
+    child3_grade: '',
+    child3_tuition: 0
   };
   for (let i = 1; i <= 14; i++) {
     emptyRec[`change_date_${i}`] = '';
@@ -1025,11 +1168,17 @@ function populateData70Form(r) {
   document.getElementById('d70_psr_allowance').value = fmtNumInput(r.psr_allowance);
   document.getElementById('d70_house_rent').value = fmtNumInput(r.house_rent);
   document.getElementById('d70_child_tuition').value = fmtNumInput(r.child_tuition);
+  for (let c = 1; c <= 3; c++) {
+    setSelectOrAddOption(`d70_child${c}_school_type`, r[`child${c}_school_type`] || '');
+    setSelectOrAddOption(`d70_child${c}_grade`, r[`child${c}_grade`] || '');
+    const amtEl = document.getElementById(`d70_child${c}_tuition`);
+    if (amtEl) amtEl.value = fmtNumInput(r[`child${c}_tuition`]);
+  }
   document.getElementById('d70_gpf_member').value = r.gpf_member === 'ไม่มี' ? 'ไม่มี' : 'มี';
   document.getElementById('d70_gpf_amount').value = fmtNumInput(r.gpf_amount);
   document.getElementById('d70_ch11_allowance').value = fmtNumInput(r.ch11_allowance);
   setSelectOrAddOption('d70_coop_member', r.coop_member || 'ไม่ได้เป็นสมาชิกสหกรณ์');
-  calcD70TotalIncome();
+  syncD70ChildTuitionTotal(false);
 
   document.getElementById('d70_first_appoint_date').value = r.first_appoint_date || '';
   setSelectOrAddOption('d70_first_position', r.first_position || '');
@@ -1102,7 +1251,16 @@ function collectData70FormRecord() {
     first_position: document.getElementById('d70_first_position').value.trim(),
     first_level: document.getElementById('d70_first_level').value.trim(),
     phone: document.getElementById('d70_phone').value.trim(),
-    email: document.getElementById('d70_email').value.trim()
+    email: document.getElementById('d70_email').value.trim(),
+    child1_school_type: document.getElementById('d70_child1_school_type') ? document.getElementById('d70_child1_school_type').value.trim() : '',
+    child1_grade: document.getElementById('d70_child1_grade') ? document.getElementById('d70_child1_grade').value.trim() : '',
+    child1_tuition: document.getElementById('d70_child1_tuition') ? (Number(document.getElementById('d70_child1_tuition').value || 0) || 0) : 0,
+    child2_school_type: document.getElementById('d70_child2_school_type') ? document.getElementById('d70_child2_school_type').value.trim() : '',
+    child2_grade: document.getElementById('d70_child2_grade') ? document.getElementById('d70_child2_grade').value.trim() : '',
+    child2_tuition: document.getElementById('d70_child2_tuition') ? (Number(document.getElementById('d70_child2_tuition').value || 0) || 0) : 0,
+    child3_school_type: document.getElementById('d70_child3_school_type') ? document.getElementById('d70_child3_school_type').value.trim() : '',
+    child3_grade: document.getElementById('d70_child3_grade') ? document.getElementById('d70_child3_grade').value.trim() : '',
+    child3_tuition: document.getElementById('d70_child3_tuition') ? (Number(document.getElementById('d70_child3_tuition').value || 0) || 0) : 0
   };
 
   for (let i = 1; i <= 14; i++) {
@@ -1190,7 +1348,7 @@ async function saveData70Form(e) {
     if (typeof currentMember !== 'undefined' && currentMember && String(currentMember.idno).trim() === rec.cid) {
       const sm = res.synced_member || {};
       const combinedPos = sm.nposit || (rec.current_position
-        ? (rec.current_level && rec.current_level !== 'ยังไม่ได้เลื่อนระดับ' && rec.current_level !== 'ยังไม่ได้ปรับระดับ'
+        ? (rec.current_level && rec.current_level !== 'ยังไม่ได้เลื่อนระดับ' && rec.current_level !== 'ยังไม่ได้ปรับระดับ' && rec.current_level !== 'ไม่มี'
             ? `${rec.current_position} ${rec.current_level}`.trim()
             : rec.current_position)
         : currentMember.nposit);
@@ -1314,7 +1472,7 @@ async function loadAdminData70List() {
           <td align="left">${r.hname || '-'}</td>
           <td align="center" style="font-family:Consolas, monospace; font-weight:bold; color:#1e3a8a;">${r.cid}</td>
           <td align="left"><b>${r.fullname || '-'}</b></td>
-          <td align="left">${r.current_position || '-'} ${r.current_level || ''}</td>
+          <td align="left">${r.current_position || '-'}${r.current_level && r.current_level !== 'ไม่มี' ? ' ' + r.current_level : ''}</td>
           <td align="center"><span style="background:#eff6ff; color:#1e40af; padding:2px 6px; border-radius:4px; font-weight:bold; font-size:11.5px;">${r.work_group || '-'}</span></td>
           <td align="center" style="font-size:12px;">${r.position_no || '-'}</td>
           <td align="right">${salNum}</td>
@@ -1513,6 +1671,103 @@ function cleanExcelTextValue(val) {
   return s;
 }
 
+function buildImportSelectOptionsHtml(items, currentVal, placeholder) {
+  const cur = String(currentVal || '').trim();
+  const esc = (s) => String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  let html = placeholder ? `<option value="">${esc(placeholder)}</option>` : '';
+  let found = false;
+  for (const it of items) {
+    const selected = it === cur ? ' selected' : '';
+    if (selected) found = true;
+    html += `<option value="${esc(it)}"${selected}>${esc(it)}</option>`;
+  }
+  if (cur && !found) {
+    html += `<option value="${esc(cur)}" selected>${esc(cur)} (นอกรายการ)</option>`;
+  }
+  return html;
+}
+
+function onImportData70FieldChange(rowIdx, field, value) {
+  if (!parsedImportData70Rows || !parsedImportData70Rows[rowIdx]) return;
+  parsedImportData70Rows[rowIdx][field] = String(value || '').trim();
+}
+
+function renderData70ImportPreviewTable(rows) {
+  if (!rows || rows.length === 0) return '';
+  const esc = (s) => String(s || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const maxShow = Math.min(rows.length, 100);
+  const trs = [];
+  for (let i = 0; i < maxShow; i++) {
+    const r = rows[i];
+    const childDetails = [];
+    for (let c = 1; c <= 3; c++) {
+      const st = r[`child${c}_school_type`];
+      const gr = r[`child${c}_grade`];
+      const amt = Number(r[`child${c}_tuition`] || 0);
+      if (st || gr || amt > 0) {
+        childDetails.push(`คนที่${c}: ${esc(st || '-')} / ${esc(gr || '-')} (${amt.toLocaleString('th-TH')} บ.)`);
+      }
+    }
+    const childSummaryHtml = childDetails.length > 0
+      ? `<div style="font-size:11px; color:#0f766e;">${childDetails.join('<br>')}</div>`
+      : `<span style="color:#94a3b8; font-size:11px;">-</span>`;
+    trs.push(`
+      <tr style="border-bottom:1px solid #e2e8f0;">
+        <td align="center">${i + 1}</td>
+        <td align="center" style="font-family:Consolas, monospace;">${esc(r.cid)}</td>
+        <td align="left"><b>${esc(r.fullname || '-')}</b></td>
+        <td>
+          <select onchange="onImportData70FieldChange(${i}, 'current_position', this.value)" style="width:100%; min-width:155px; padding:3px 4px; font-size:11.5px; border:1px solid #94a3b8; border-radius:4px;">
+            ${buildImportSelectOptionsHtml(DATA70_POSITIONS, r.current_position, '-- เลือกตำแหน่ง --')}
+          </select>
+        </td>
+        <td>
+          <select onchange="onImportData70FieldChange(${i}, 'current_level', this.value)" style="width:100%; min-width:110px; padding:3px 4px; font-size:11.5px; border:1px solid #94a3b8; border-radius:4px;">
+            ${buildImportSelectOptionsHtml(DATA70_LEVELS, r.current_level, '-- เลือกระดับ --')}
+          </select>
+        </td>
+        <td align="right" style="font-weight:bold; color:#0f766e;">${Number(r.child_tuition || 0).toLocaleString('th-TH')}</td>
+        <td align="left">${childSummaryHtml}</td>
+      </tr>
+    `);
+  }
+  const moreNote = rows.length > maxShow
+    ? `<div style="font-size:11.5px; color:#64748b; padding:4px 6px;">* แสดงตัวอย่าง ${maxShow} รายการแรก จากทั้งหมด ${rows.length} รายการ (ระบบจะนำเข้าครบทั้ง ${rows.length} รายการ)</div>`
+    : '';
+  return `
+    <div style="margin-top:8px;">
+      <div style="font-size:12px; font-weight:bold; color:#1e3a8a; margin-bottom:4px;">
+        📋 ตรวจสอบข้อมูลก่อนนำเข้า (สามารถปรับแก้ตำแหน่ง/ระดับได้ทันทีก่อนกดยืนยัน):
+      </div>
+      <div style="max-height:220px; overflow:auto; border:1px solid #cbd5e1; border-radius:4px; background:#fff;">
+        <table width="100%" border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
+          <thead style="background:#f1f5f9; position:sticky; top:0;">
+            <tr>
+              <th width="36">#</th>
+              <th width="105">เลข 13 หลัก</th>
+              <th>ชื่อ-สกุล</th>
+              <th>ตำแหน่งปัจจุบัน</th>
+              <th>ระดับปัจจุบัน</th>
+              <th width="85">ค่าเล่าเรียนรวม</th>
+              <th>รายละเอียดบุตร 1–3</th>
+            </tr>
+          </thead>
+          <tbody>${trs.join('')}</tbody>
+        </table>
+      </div>
+      ${moreNote}
+    </div>
+  `;
+}
+
 function handleData70FileSelect(e) {
   const file = e.target.files && e.target.files[0];
   if (!file) return;
@@ -1534,6 +1789,7 @@ function handleData70FileSelect(e) {
       parsedImportData70Rows = [];
       let startRow = 1;
       let hasWorkGroupCol = true; // โครงสร้างใหม่มี "กลุ่มงาน" ที่คอลัมน์ index 11 (หลังระดับปัจจุบัน)
+      let headerRowCells = [];
 
       // ค้นหาแถว Header ที่มีคำว่า "13หลัก" หรือ "ชื่อ-สกุล" หรือ "ลำดับsml"
       for (let r = 0; r < Math.min(10, rows.length); r++) {
@@ -1541,10 +1797,36 @@ function handleData70FileSelect(e) {
         const rowStr = rowCells.join(' ');
         if (rowStr.includes('13หลัก') || rowStr.includes('ลำดับsml') || rowStr.includes('ชื่อ-สกุล')) {
           startRow = r + 1;
+          headerRowCells = rowCells;
           hasWorkGroupCol = rowCells.some(c => c.includes('กลุ่มงาน'));
           break;
         }
       }
+
+      const findColIdxByHeader = (patterns, fallbackIdx) => {
+        if (headerRowCells.length > 0) {
+          for (let c = 0; c < headerRowCells.length; c++) {
+            const norm = headerRowCells[c].replace(/\s+/g, '').toLowerCase();
+            for (const p of patterns) {
+              if (norm === p.replace(/\s+/g, '').toLowerCase()) return c;
+            }
+          }
+        }
+        return fallbackIdx;
+      };
+
+      const shift = hasWorkGroupCol ? 1 : 0;
+      const childColIdx = {
+        c1_st: findColIdxByHeader(['ประเภทสถานศึกษา 1', 'ประเภทสถานศึกษา1', 'child1_school_type'], 73 + shift),
+        c1_gr: findColIdxByHeader(['ระดับชั้น 1', 'ระดับชั้น1', 'child1_grade'], 74 + shift),
+        c1_amt: findColIdxByHeader(['จำนวนเงิน 1', 'จำนวนเงิน1', 'child1_tuition'], 75 + shift),
+        c2_st: findColIdxByHeader(['ประเภทสถานศึกษา 2', 'ประเภทสถานศึกษา2', 'child2_school_type'], 76 + shift),
+        c2_gr: findColIdxByHeader(['ระดับชั้น 2', 'ระดับชั้น2', 'child2_grade'], 77 + shift),
+        c2_amt: findColIdxByHeader(['จำนวนเงิน 2', 'จำนวนเงิน2', 'child2_tuition'], 78 + shift),
+        c3_st: findColIdxByHeader(['ประเภทสถานศึกษา 3', 'ประเภทสถานศึกษา3', 'child3_school_type'], 79 + shift),
+        c3_gr: findColIdxByHeader(['ระดับชั้น 3', 'ระดับชั้น3', 'child3_grade'], 80 + shift),
+        c3_amt: findColIdxByHeader(['จำนวนเงิน 3', 'จำนวนเงิน3', 'child3_tuition'], 81 + shift)
+      };
 
       // เตรียม Map ตรวจสอบ เลข 13 หลัก, ชื่อ-สกุล และ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น พร้อมเบอร์โทรติดต่อ
       const seenCidInFileMap = new Map();
@@ -1574,7 +1856,6 @@ function handleData70FileSelect(e) {
 
         const hname = cleanExcelTextValue(row[2]);
         const matchedHosp = DATA70_HOSPITALS.find(h => h.hname === hname);
-        const shift = hasWorkGroupCol ? 1 : 0;
 
         const normFullname = normalizeFullnameSpaces(cleanExcelTextValue(row[6]));
         const workGroupVal = hasWorkGroupCol ? cleanExcelTextValue(row[11]) : '';
@@ -1622,6 +1903,39 @@ function handleData70FileSelect(e) {
           seenPosNoMap.set(normPosNo, curInfo);
         }
 
+        const parseChildImport = (stIdx, grIdx, amtIdx) => {
+          const st = cleanExcelTextValue(row[stIdx]);
+          const gr = cleanExcelTextValue(row[grIdx]);
+          const rawAmt = cleanExcelTextValue(row[amtIdx]).replace(/,/g, '');
+          let amt = 0;
+          if (rawAmt !== '') {
+            const parsed = Number(rawAmt);
+            amt = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+          } else if (st && gr) {
+            amt = getChildTuitionRate(st, gr);
+          }
+          return { st, gr, amt };
+        };
+
+        const c1 = parseChildImport(childColIdx.c1_st, childColIdx.c1_gr, childColIdx.c1_amt);
+        const c2 = parseChildImport(childColIdx.c2_st, childColIdx.c2_gr, childColIdx.c2_amt);
+        const c3 = parseChildImport(childColIdx.c3_st, childColIdx.c3_gr, childColIdx.c3_amt);
+        const childrenSum = c1.amt + c2.amt + c3.amt;
+
+        const rawChildTuitionVal = Number(cleanExcelTextValue(row[20 + shift]).replace(/,/g, '')) || 0;
+        const effectiveChildTuition = (rawChildTuitionVal === 0 && childrenSum > 0) ? childrenSum : rawChildTuitionVal;
+
+        const salaryVal = Number(cleanExcelTextValue(row[14 + shift]).replace(/,/g, '')) || 0;
+        const allowanceVal = Number(cleanExcelTextValue(row[15 + shift]).replace(/,/g, '')) || 0;
+        const posAllowanceVal = Number(cleanExcelTextValue(row[16 + shift]).replace(/,/g, '')) || 0;
+        const ptsVal = Number(cleanExcelTextValue(row[17 + shift]).replace(/,/g, '')) || 0;
+        const psrVal = Number(cleanExcelTextValue(row[18 + shift]).replace(/,/g, '')) || 0;
+        const houseRentVal = Number(cleanExcelTextValue(row[19 + shift]).replace(/,/g, '')) || 0;
+        const gpfVal = Number(cleanExcelTextValue(row[22 + shift]).replace(/,/g, '')) || 0;
+        const ch11Val = Number(cleanExcelTextValue(row[23 + shift]).replace(/,/g, '')) || 0;
+        const rawTotalIncome = Number(cleanExcelTextValue(row[24 + shift]).replace(/,/g, '')) || 0;
+        const calcIncome = salaryVal + allowanceVal + posAllowanceVal + ptsVal + psrVal + houseRentVal + effectiveChildTuition + gpfVal + ch11Val;
+
         const rec = {
           seq_no: Number(cleanExcelTextValue(row[0])) || (parsedImportData70Rows.length + 1),
           sml_seq: Number(cleanExcelTextValue(row[1])) || (matchedHosp ? matchedHosp.sml_seq : 0),
@@ -1638,21 +1952,30 @@ function handleData70FileSelect(e) {
           position_no: normPosNo,
           edu_degree: cleanExcelTextValue(row[12 + shift]),
           edu_major: cleanExcelTextValue(row[13 + shift]),
-          salary: Number(cleanExcelTextValue(row[14 + shift]).replace(/,/g, '')) || 0,
-          allowance: Number(cleanExcelTextValue(row[15 + shift]).replace(/,/g, '')) || 0,
-          position_allowance: Number(cleanExcelTextValue(row[16 + shift]).replace(/,/g, '')) || 0,
-          pts_allowance: Number(cleanExcelTextValue(row[17 + shift]).replace(/,/g, '')) || 0,
-          psr_allowance: Number(cleanExcelTextValue(row[18 + shift]).replace(/,/g, '')) || 0,
-          house_rent: Number(cleanExcelTextValue(row[19 + shift]).replace(/,/g, '')) || 0,
-          child_tuition: Number(cleanExcelTextValue(row[20 + shift]).replace(/,/g, '')) || 0,
+          salary: salaryVal,
+          allowance: allowanceVal,
+          position_allowance: posAllowanceVal,
+          pts_allowance: ptsVal,
+          psr_allowance: psrVal,
+          house_rent: houseRentVal,
+          child_tuition: effectiveChildTuition,
           gpf_member: cleanExcelTextValue(row[21 + shift]) || 'ไม่มี',
-          gpf_amount: Number(cleanExcelTextValue(row[22 + shift]).replace(/,/g, '')) || 0,
-          ch11_allowance: Number(cleanExcelTextValue(row[23 + shift]).replace(/,/g, '')) || 0,
-          total_income: Number(cleanExcelTextValue(row[24 + shift]).replace(/,/g, '')) || 0,
+          gpf_amount: gpfVal,
+          ch11_allowance: ch11Val,
+          total_income: rawTotalIncome > 0 ? rawTotalIncome : calcIncome,
           coop_member: cleanExcelTextValue(row[25 + shift]) || 'ไม่ได้เป็นสมาชิกสหกรณ์',
           first_appoint_date: cleanExcelTextValue(row[26 + shift]),
           first_position: cleanExcelTextValue(row[27 + shift]),
-          first_level: cleanExcelTextValue(row[28 + shift])
+          first_level: cleanExcelTextValue(row[28 + shift]),
+          child1_school_type: c1.st,
+          child1_grade: c1.gr,
+          child1_tuition: c1.amt,
+          child2_school_type: c2.st,
+          child2_grade: c2.gr,
+          child2_tuition: c2.amt,
+          child3_school_type: c3.st,
+          child3_grade: c3.gr,
+          child3_tuition: c3.amt
         };
 
         for (let i = 1; i <= 14; i++) {
@@ -1678,6 +2001,9 @@ function handleData70FileSelect(e) {
             <b>⚠️ พบรายการที่มี ชื่อ-สกุล หรือ เลขตำแหน่งปัจจุบัน ซ้ำกับคนอื่น (${duplicateWarnings.length} รายการ ระบบได้ตัดออกจากการนำเข้า):</b><br>
             ${duplicateWarnings.slice(0, 10).map(w => `• ${w}`).join('<br>')}
           </div>`;
+        }
+        if (parsedImportData70Rows.length > 0) {
+          html += renderData70ImportPreviewTable(parsedImportData70Rows);
         }
         infoEl.innerHTML = html;
       }

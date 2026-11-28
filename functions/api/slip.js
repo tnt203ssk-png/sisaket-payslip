@@ -650,15 +650,43 @@ async function ensureData70Table(db) {
       ${DATA70_CHANGE_COLS_DDL},
       phone VARCHAR(50) DEFAULT '',
       email VARCHAR(150) DEFAULT '',
+      child1_school_type VARCHAR(100) DEFAULT '',
+      child1_grade VARCHAR(100) DEFAULT '',
+      child1_tuition DECIMAL(12,2) DEFAULT 0,
+      child2_school_type VARCHAR(100) DEFAULT '',
+      child2_grade VARCHAR(100) DEFAULT '',
+      child2_tuition DECIMAL(12,2) DEFAULT 0,
+      child3_school_type VARCHAR(100) DEFAULT '',
+      child3_grade VARCHAR(100) DEFAULT '',
+      child3_tuition DECIMAL(12,2) DEFAULT 0,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (cid)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8 COLLATE=utf8_general_ci;
   `);
 
-  // Auto-Migration: เพิ่มคอลัมน์ work_group ถัดจาก current_level หากตารางเดิมยังไม่มี
-  const qWgCol = await db.query("SHOW COLUMNS FROM personnel_data70 LIKE 'work_group';");
-  if (!qWgCol.rows || qWgCol.rows.length === 0) {
+  // Auto-Migration: เพิ่มคอลัมน์ work_group และคอลัมน์ค่าเล่าเรียนบุตรคนที่ 1-3 หากตารางเดิมยังไม่มี
+  const qAllCols = await db.query("SHOW COLUMNS FROM personnel_data70;");
+  const existingCols = new Set((qAllCols.rows || []).map(r => String(r.Field || '').toLowerCase()));
+  if (!existingCols.has('work_group')) {
     await db.query("ALTER TABLE personnel_data70 ADD COLUMN work_group VARCHAR(100) DEFAULT '' AFTER current_level;");
+    existingCols.add('work_group');
+  }
+  const childMigrationCols = [
+    { name: 'child1_school_type', ddl: "VARCHAR(100) DEFAULT ''", after: 'email' },
+    { name: 'child1_grade', ddl: "VARCHAR(100) DEFAULT ''", after: 'child1_school_type' },
+    { name: 'child1_tuition', ddl: 'DECIMAL(12,2) DEFAULT 0', after: 'child1_grade' },
+    { name: 'child2_school_type', ddl: "VARCHAR(100) DEFAULT ''", after: 'child1_tuition' },
+    { name: 'child2_grade', ddl: "VARCHAR(100) DEFAULT ''", after: 'child2_school_type' },
+    { name: 'child2_tuition', ddl: 'DECIMAL(12,2) DEFAULT 0', after: 'child2_grade' },
+    { name: 'child3_school_type', ddl: "VARCHAR(100) DEFAULT ''", after: 'child2_tuition' },
+    { name: 'child3_grade', ddl: "VARCHAR(100) DEFAULT ''", after: 'child3_school_type' },
+    { name: 'child3_tuition', ddl: 'DECIMAL(12,2) DEFAULT 0', after: 'child3_grade' }
+  ];
+  for (const col of childMigrationCols) {
+    if (!existingCols.has(col.name)) {
+      await db.query(`ALTER TABLE personnel_data70 ADD COLUMN ${col.name} ${col.ddl} AFTER ${col.after};`);
+      existingCols.add(col.name);
+    }
   }
 
   // Seed default example row (นายธนโชติ ดวงตะวัน) if not exists
@@ -785,7 +813,7 @@ function buildFullPosition(pos, lvl) {
   const p = normalizeSpaces(pos);
   const l = normalizeSpaces(lvl);
   if (!p) return l;
-  if (!l || l === 'ยังไม่ได้เลื่อนระดับ' || l === 'ยังไม่ได้ปรับระดับ') return p;
+  if (!l || l === 'ยังไม่ได้เลื่อนระดับ' || l === 'ยังไม่ได้ปรับระดับ' || l === 'ไม่มี') return p;
   const pNorm = p.replace(/ฏิ/g, 'ฎิ');
   const lNorm = l.replace(/ฏิ/g, 'ฎิ');
   if (pNorm.endsWith(lNorm)) return p;
@@ -946,7 +974,7 @@ export async function onRequest(context) {
                  WHEN d70.current_position IS NOT NULL AND TRIM(d70.current_position) <> ''
                  THEN CASE
                    WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
-                        AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                        AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ', 'ไม่มี')
                         AND REPLACE(TRIM(d70.current_position), 'ฏิ', 'ฎิ') NOT LIKE CONCAT('%', REPLACE(TRIM(d70.current_level), 'ฏิ', 'ฎิ'))
                    THEN CONCAT(TRIM(d70.current_position), ' ', TRIM(d70.current_level))
                    ELSE TRIM(d70.current_position)
@@ -1024,7 +1052,7 @@ export async function onRequest(context) {
                  WHEN d70.current_position IS NOT NULL AND TRIM(d70.current_position) <> ''
                  THEN CASE
                    WHEN d70.current_level IS NOT NULL AND TRIM(d70.current_level) <> ''
-                        AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                        AND TRIM(d70.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ', 'ไม่มี')
                         AND REPLACE(TRIM(d70.current_position), 'ฏิ', 'ฎิ') NOT LIKE CONCAT('%', REPLACE(TRIM(d70.current_level), 'ฏิ', 'ฎิ'))
                    THEN CONCAT(TRIM(d70.current_position), ' ', TRIM(d70.current_level))
                    ELSE TRIM(d70.current_position)
@@ -1846,7 +1874,20 @@ export async function onRequest(context) {
       const ptsAllowance = Number(String(rec.pts_allowance || 0).replace(/,/g, '')) || 0;
       const psrAllowance = Number(String(rec.psr_allowance || 0).replace(/,/g, '')) || 0;
       const houseRent = Number(String(rec.house_rent || 0).replace(/,/g, '')) || 0;
-      const childTuition = Number(String(rec.child_tuition || 0).replace(/,/g, '')) || 0;
+      const child1SchoolType = String(rec.child1_school_type || '').trim();
+      const child1Grade = String(rec.child1_grade || '').trim();
+      const child1Tuition = Number(String(rec.child1_tuition || 0).replace(/,/g, '')) || 0;
+      const child2SchoolType = String(rec.child2_school_type || '').trim();
+      const child2Grade = String(rec.child2_grade || '').trim();
+      const child2Tuition = Number(String(rec.child2_tuition || 0).replace(/,/g, '')) || 0;
+      const child3SchoolType = String(rec.child3_school_type || '').trim();
+      const child3Grade = String(rec.child3_grade || '').trim();
+      const child3Tuition = Number(String(rec.child3_tuition || 0).replace(/,/g, '')) || 0;
+      const childrenTuitionSum = child1Tuition + child2Tuition + child3Tuition;
+      const rawChildTuition = Number(String(rec.child_tuition || 0).replace(/,/g, '')) || 0;
+      const childTuition = (childrenTuitionSum > 0 && (rec.child_tuition === undefined || rec.child_tuition === '' || rawChildTuition === 0))
+        ? childrenTuitionSum
+        : rawChildTuition;
       const gpfAmount = Number(String(rec.gpf_amount || 0).replace(/,/g, '')) || 0;
       const ch11Allowance = Number(String(rec.ch11_allowance || 0).replace(/,/g, '')) || 0;
       const calcTotal = salary + allowance + posAllowance + ptsAllowance + psrAllowance + houseRent + childTuition + gpfAmount + ch11Allowance;
@@ -1881,7 +1922,10 @@ export async function onRequest(context) {
           gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
           first_appoint_date, first_position, first_level,
           ${changeCols.join(', ')},
-          phone, email
+          phone, email,
+          child1_school_type, child1_grade, child1_tuition,
+          child2_school_type, child2_grade, child2_tuition,
+          child3_school_type, child3_grade, child3_tuition
         ) VALUES (
           ${seqNo},
           ${smlSeq},
@@ -1915,7 +1959,16 @@ export async function onRequest(context) {
           ${sqlEsc(String(rec.first_level || '').trim())},
           ${changeVals.join(', ')},
           ${sqlEsc(rawPhone)},
-          ${sqlEsc(rawEmail)}
+          ${sqlEsc(rawEmail)},
+          ${sqlEsc(child1SchoolType)},
+          ${sqlEsc(child1Grade)},
+          ${sqlNum(child1Tuition)},
+          ${sqlEsc(child2SchoolType)},
+          ${sqlEsc(child2Grade)},
+          ${sqlNum(child2Tuition)},
+          ${sqlEsc(child3SchoolType)},
+          ${sqlEsc(child3Grade)},
+          ${sqlNum(child3Tuition)}
         )
         ON DUPLICATE KEY UPDATE
           seq_no = VALUES(seq_no),
@@ -1949,7 +2002,16 @@ export async function onRequest(context) {
           first_level = VALUES(first_level),
           ${changeUpds.join(', ')},
           phone = VALUES(phone),
-          email = VALUES(email);
+          email = VALUES(email),
+          child1_school_type = VALUES(child1_school_type),
+          child1_grade = VALUES(child1_grade),
+          child1_tuition = VALUES(child1_tuition),
+          child2_school_type = VALUES(child2_school_type),
+          child2_grade = VALUES(child2_grade),
+          child2_tuition = VALUES(child2_tuition),
+          child3_school_type = VALUES(child3_school_type),
+          child3_grade = VALUES(child3_grade),
+          child3_tuition = VALUES(child3_tuition);
       `);
 
       // ซิงก์ข้อมูลบุคลากร (ชื่อ-สกุล, ตำแหน่ง+ระดับ, ชื่อ รพ.สต., เลขบัญชี, เบอร์โทร, อีเมล) กลับไปยัง tbmain, person, tbdetail โดยเทียบเลข 13 หลัก
@@ -2159,7 +2221,20 @@ export async function onRequest(context) {
         const ptsAllowance = Number(String(rec.pts_allowance || 0).replace(/,/g, '')) || 0;
         const psrAllowance = Number(String(rec.psr_allowance || 0).replace(/,/g, '')) || 0;
         const houseRent = Number(String(rec.house_rent || 0).replace(/,/g, '')) || 0;
-        const childTuition = Number(String(rec.child_tuition || 0).replace(/,/g, '')) || 0;
+        const child1SchoolType = String(rec.child1_school_type || '').trim();
+        const child1Grade = String(rec.child1_grade || '').trim();
+        const child1Tuition = Number(String(rec.child1_tuition || 0).replace(/,/g, '')) || 0;
+        const child2SchoolType = String(rec.child2_school_type || '').trim();
+        const child2Grade = String(rec.child2_grade || '').trim();
+        const child2Tuition = Number(String(rec.child2_tuition || 0).replace(/,/g, '')) || 0;
+        const child3SchoolType = String(rec.child3_school_type || '').trim();
+        const child3Grade = String(rec.child3_grade || '').trim();
+        const child3Tuition = Number(String(rec.child3_tuition || 0).replace(/,/g, '')) || 0;
+        const childrenTuitionSum = child1Tuition + child2Tuition + child3Tuition;
+        const rawChildTuition = Number(String(rec.child_tuition || 0).replace(/,/g, '')) || 0;
+        const childTuition = (childrenTuitionSum > 0 && (rec.child_tuition === undefined || rec.child_tuition === '' || rawChildTuition === 0))
+          ? childrenTuitionSum
+          : rawChildTuition;
         const gpfAmount = Number(String(rec.gpf_amount || 0).replace(/,/g, '')) || 0;
         const ch11Allowance = Number(String(rec.ch11_allowance || 0).replace(/,/g, '')) || 0;
         const calcTotal = salary + allowance + posAllowance + ptsAllowance + psrAllowance + houseRent + childTuition + gpfAmount + ch11Allowance;
@@ -2192,7 +2267,10 @@ export async function onRequest(context) {
             gpf_member, gpf_amount, ch11_allowance, total_income, coop_member,
             first_appoint_date, first_position, first_level,
             ${changeCols.join(', ')},
-            phone, email
+            phone, email,
+            child1_school_type, child1_grade, child1_tuition,
+            child2_school_type, child2_grade, child2_tuition,
+            child3_school_type, child3_grade, child3_tuition
           ) VALUES (
             ${seqNo},
             ${smlSeq},
@@ -2226,7 +2304,16 @@ export async function onRequest(context) {
             ${sqlEsc(String(rec.first_level || '').trim())},
             ${changeVals.join(', ')},
             ${sqlEsc(rawPhone)},
-            ${sqlEsc(rawEmail)}
+            ${sqlEsc(rawEmail)},
+            ${sqlEsc(child1SchoolType)},
+            ${sqlEsc(child1Grade)},
+            ${sqlNum(child1Tuition)},
+            ${sqlEsc(child2SchoolType)},
+            ${sqlEsc(child2Grade)},
+            ${sqlNum(child2Tuition)},
+            ${sqlEsc(child3SchoolType)},
+            ${sqlEsc(child3Grade)},
+            ${sqlNum(child3Tuition)}
           )
           ON DUPLICATE KEY UPDATE
             seq_no = VALUES(seq_no),
@@ -2260,7 +2347,16 @@ export async function onRequest(context) {
             first_level = VALUES(first_level),
             ${changeUpds.join(', ')},
             phone = VALUES(phone),
-            email = VALUES(email);
+            email = VALUES(email),
+            child1_school_type = VALUES(child1_school_type),
+            child1_grade = VALUES(child1_grade),
+            child1_tuition = VALUES(child1_tuition),
+            child2_school_type = VALUES(child2_school_type),
+            child2_grade = VALUES(child2_grade),
+            child2_tuition = VALUES(child2_tuition),
+            child3_school_type = VALUES(child3_school_type),
+            child3_grade = VALUES(child3_grade),
+            child3_tuition = VALUES(child3_tuition);
         `);
 
         importedCount++;
@@ -2304,7 +2400,7 @@ export async function onRequest(context) {
             WHEN d.current_position IS NOT NULL AND TRIM(d.current_position) <> ''
             THEN CASE
               WHEN d.current_level IS NOT NULL AND TRIM(d.current_level) <> ''
-                   AND TRIM(d.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ')
+                   AND TRIM(d.current_level) NOT IN ('ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ', 'ไม่มี')
                    AND REPLACE(TRIM(d.current_position), 'ฏิ', 'ฎิ') NOT LIKE CONCAT('%', REPLACE(TRIM(d.current_level), 'ฏิ', 'ฎิ'))
               THEN CONCAT(TRIM(d.current_position), ' ', TRIM(d.current_level))
               ELSE TRIM(d.current_position)
@@ -2373,7 +2469,7 @@ export async function onRequest(context) {
                DATE_FORMAT(a.created_at, '%Y-%m-%d %H:%i:%s') AS created_at,
                COALESCE(NULLIF(TRIM(d.hname), ''), '') AS hname,
                COALESCE(
-                 NULLIF(TRIM(CONCAT(COALESCE(d.current_position, ''), ' ', COALESCE(d.current_level, ''))), ''),
+                 NULLIF(TRIM(CASE WHEN TRIM(COALESCE(d.current_level, '')) IN ('', 'ไม่มี', 'ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ') THEN COALESCE(d.current_position, '') ELSE CONCAT(COALESCE(d.current_position, ''), ' ', COALESCE(d.current_level, '')) END), ''),
                  NULLIF(TRIM(m.nposit), ''),
                  ''
                ) AS position
@@ -2425,7 +2521,7 @@ export async function onRequest(context) {
           COALESCE(NULLIF(TRIM(d.fullname), ''), NULLIF(TRIM(m.nname), ''), '') AS fullname,
           COALESCE(NULLIF(TRIM(d.hname), ''), '') AS hname,
           COALESCE(
-            NULLIF(TRIM(CONCAT(COALESCE(d.current_position, ''), ' ', COALESCE(d.current_level, ''))), ''),
+            NULLIF(TRIM(CASE WHEN TRIM(COALESCE(d.current_level, '')) IN ('', 'ไม่มี', 'ยังไม่ได้เลื่อนระดับ', 'ยังไม่ได้ปรับระดับ') THEN COALESCE(d.current_position, '') ELSE CONCAT(COALESCE(d.current_position, ''), ' ', COALESCE(d.current_level, '')) END), ''),
             NULLIF(TRIM(m.nposit), ''),
             ''
           ) AS position,
