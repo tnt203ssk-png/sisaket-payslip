@@ -526,6 +526,143 @@ function cleanCid13(val) {
   return String(val || '').replace(/[^0-9]/g, '').trim();
 }
 
+const THAI_MONTH_MAP_API = {
+  'ม.ค.': 1, 'มกราคม': 1, 'มค': 1,
+  'ก.พ.': 2, 'กุมภาพันธ์': 2, 'กพ': 2,
+  'มี.ค.': 3, 'มีนาคม': 3, 'มีค': 3,
+  'เม.ย.': 4, 'เมษายน': 4, 'เมย': 4,
+  'พ.ค.': 5, 'พฤษภาคม': 5, 'พค': 5,
+  'มิ.ย.': 6, 'มิถุนายน': 6, 'มิย': 6,
+  'ก.ค.': 7, 'กรกฎาคม': 7, 'กค': 7,
+  'ส.ค.': 8, 'สิงหาคม': 8, 'สค': 8,
+  'ก.ย.': 9, 'กันยายน': 9, 'กย': 9,
+  'ต.ค.': 10, 'ตุลาคม': 10, 'ตค': 10,
+  'พ.ย.': 11, 'พฤศจิกายน': 11, 'พย': 11,
+  'ธ.ค.': 12, 'ธันวาคม': 12, 'ธค': 12
+};
+
+function isValidBeCalendarDate(beYear, month, day) {
+  if (!Number.isInteger(beYear) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (beYear < 2400 || beYear > 2700) return false;
+  if (month < 1 || month > 12) return false;
+  const ceYear = beYear - 543;
+  const maxDay = new Date(Date.UTC(ceYear, month, 0)).getUTCDate();
+  return day >= 1 && day <= maxDay;
+}
+
+function formatThaiDateISO(rawVal) {
+  const raw = String(rawVal ?? '').trim();
+  if (!raw || raw === '-' || raw === 'ไม่มี' || raw === '0000-00-00') return '';
+
+  const s = raw.replace(/[T\s]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?Z?$/i, '').trim();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const toBeYear = (y) => {
+    if (y >= 2400 && y <= 2700) return y;
+    if (y >= 1900 && y <= 2150) return y + 543;
+    if (y >= 0 && y <= 99) return (y <= 39 ? 2000 + y : 1900 + y) + 543;
+    return y;
+  };
+
+  // 1. YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) {
+    const y = toBeYear(parseInt(m[1], 10));
+    const mo = parseInt(m[2], 10);
+    const d = parseInt(m[3], 10);
+    if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return raw;
+  }
+
+  // 2. 8 consecutive digits: YYYYMMDD (พ.ศ./ค.ศ.) or DDMMYYYY
+  m = s.match(/^(\d{8})$/);
+  if (m) {
+    const digits = m[1];
+    const yHead = parseInt(digits.slice(0, 4), 10);
+    const mMid = parseInt(digits.slice(4, 6), 10);
+    const dTail = parseInt(digits.slice(6, 8), 10);
+    if ((yHead >= 2400 && yHead <= 2700) || (yHead >= 1900 && yHead <= 2150)) {
+      const yBe = toBeYear(yHead);
+      if (isValidBeCalendarDate(yBe, mMid, dTail)) return `${yBe}-${pad2(mMid)}-${pad2(dTail)}`;
+    }
+    const dHead = parseInt(digits.slice(0, 2), 10);
+    const mHead = parseInt(digits.slice(2, 4), 10);
+    const yTail = parseInt(digits.slice(4, 8), 10);
+    if ((yTail >= 2400 && yTail <= 2700) || (yTail >= 1900 && yTail <= 2150)) {
+      const yBe = toBeYear(yTail);
+      if (isValidBeCalendarDate(yBe, mHead, dHead)) return `${yBe}-${pad2(mHead)}-${pad2(dHead)}`;
+    }
+    return raw;
+  }
+
+  // 3. DD/MM/YYYY or D/M/YYYY (4-digit year at end)
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (m) {
+    let p1 = parseInt(m[1], 10);
+    let p2 = parseInt(m[2], 10);
+    const y = toBeYear(parseInt(m[3], 10));
+    let d = p1;
+    let mo = p2;
+    if (p1 <= 12 && p2 > 12) {
+      mo = p1;
+      d = p2;
+    }
+    if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return raw;
+  }
+
+  // 4. M/D/YY (Excel US short date e.g. 10/2/22 -> 2565-10-02) or D/M/YY if first > 12
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if (m) {
+    const p1 = parseInt(m[1], 10);
+    const p2 = parseInt(m[2], 10);
+    const y = toBeYear(parseInt(m[3], 10));
+    let mo = p1;
+    let d = p2;
+    if (p1 > 12 && p2 <= 12) {
+      d = p1;
+      mo = p2;
+    }
+    if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return raw;
+  }
+
+  // 5. Thai text date e.g. 2 ต.ค. 2565 or 11 มีนาคม 2518
+  m = s.match(/^(\d{1,2})\s+([^\d\s]+)\s+(\d{2,4})$/);
+  if (m) {
+    const d = parseInt(m[1], 10);
+    const mo = THAI_MONTH_MAP_API[m[2].trim()];
+    const y = toBeYear(parseInt(m[3], 10));
+    if (mo && isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+  }
+
+  // 6. Excel serial date number (e.g. 44836 -> 2022-10-02 -> 2565-10-02)
+  if (/^\d{5}$/.test(s)) {
+    const serial = parseInt(s, 10);
+    if (serial >= 18000 && serial <= 60000) {
+      const dt = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      const y = dt.getUTCFullYear() + 543;
+      const mo = dt.getUTCMonth() + 1;
+      const d = dt.getUTCDate();
+      if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    }
+  }
+
+  return raw;
+}
+
+function standardizeData70RecordDates(row) {
+  if (!row || typeof row !== 'object') return row;
+  const out = { ...row };
+  if ('birth_date' in out) out.birth_date = formatThaiDateISO(out.birth_date);
+  if ('transfer_date' in out) out.transfer_date = formatThaiDateISO(out.transfer_date);
+  if ('first_appoint_date' in out) out.first_appoint_date = formatThaiDateISO(out.first_appoint_date);
+  for (let i = 1; i <= 14; i++) {
+    const k = `change_date_${i}`;
+    if (k in out) out[k] = formatThaiDateISO(out[k]);
+  }
+  return out;
+}
+
 async function ensureAdminUsersTable(db) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS admin_users (
@@ -1717,7 +1854,7 @@ export async function onRequest(context) {
       return new Response(JSON.stringify({
         success: true,
         exists: qD70.rows.length > 0,
-        record: qD70.rows.length > 0 ? qD70.rows[0] : null,
+        record: qD70.rows.length > 0 ? standardizeData70RecordDates(qD70.rows[0]) : null,
         fallback_member: qMain.rows.length > 0 ? qMain.rows[0] : null,
         fallback_slip: qSlip.rows.length > 0 ? qSlip.rows[0] : null
       }), { headers: corsHeaders });
@@ -1899,7 +2036,7 @@ export async function onRequest(context) {
       const changeVals = [];
       const changeUpds = [];
       for (let i = 1; i <= 14; i++) {
-        const cDate = String(rec[`change_date_${i}`] || '').trim();
+        const cDate = formatThaiDateISO(rec[`change_date_${i}`] || '');
         const cPos = String(rec[`change_pos_${i}`] || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง').trim() || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
         const cLvl = String(rec[`change_level_${i}`] || 'ยังไม่ได้ปรับระดับ').trim() || 'ยังไม่ได้ปรับระดับ';
         changeCols.push(`change_date_${i}`, `change_pos_${i}`, `change_level_${i}`);
@@ -1913,6 +2050,9 @@ export async function onRequest(context) {
 
       const rawPhone = String(rec.phone || '').trim();
       const rawEmail = String(rec.email || '').trim();
+      const stdBirthDate = formatThaiDateISO(rec.birth_date || '');
+      const stdTransferDate = formatThaiDateISO(rec.transfer_date || '');
+      const stdFirstAppointDate = formatThaiDateISO(rec.first_appoint_date || '');
 
       await db.query(`
         INSERT INTO personnel_data70 (
@@ -1934,8 +2074,8 @@ export async function onRequest(context) {
           ${sqlEsc(cid)},
           ${sqlEsc(String(rec.bank_account || '').trim())},
           ${sqlEsc(normFullname)},
-          ${sqlEsc(String(rec.birth_date || '').trim())},
-          ${sqlEsc(String(rec.transfer_date || '').trim())},
+          ${sqlEsc(stdBirthDate)},
+          ${sqlEsc(stdTransferDate)},
           ${sqlEsc(String(rec.current_position || '').trim())},
           ${sqlEsc(String(rec.current_level || '').trim())},
           ${sqlEsc(String(rec.work_group || '').trim())},
@@ -1954,7 +2094,7 @@ export async function onRequest(context) {
           ${sqlNum(ch11Allowance)},
           ${sqlNum(totalIncome)},
           ${sqlEsc(String(rec.coop_member || 'ไม่ได้เป็นสมาชิกสหกรณ์').trim())},
-          ${sqlEsc(String(rec.first_appoint_date || '').trim())},
+          ${sqlEsc(stdFirstAppointDate)},
           ${sqlEsc(String(rec.first_position || '').trim())},
           ${sqlEsc(String(rec.first_level || '').trim())},
           ${changeVals.join(', ')},
@@ -2086,7 +2226,7 @@ export async function onRequest(context) {
         success: true,
         total_data70: Number(qCountAll.rows[0]?.cnt || 0),
         total_tbmain: Number(qCountMain.rows[0]?.cnt || 0),
-        rows: qRows.rows
+        rows: (qRows.rows || []).map(standardizeData70RecordDates)
       }), { headers: corsHeaders });
     }
 
@@ -2244,7 +2384,7 @@ export async function onRequest(context) {
         const changeVals = [];
         const changeUpds = [];
         for (let i = 1; i <= 14; i++) {
-          const cDate = String(rec[`change_date_${i}`] || '').trim();
+          const cDate = formatThaiDateISO(rec[`change_date_${i}`] || '');
           const cPos = String(rec[`change_pos_${i}`] || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง').trim() || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
           const cLvl = String(rec[`change_level_${i}`] || 'ยังไม่ได้ปรับระดับ').trim() || 'ยังไม่ได้ปรับระดับ';
           changeCols.push(`change_date_${i}`, `change_pos_${i}`, `change_level_${i}`);
@@ -2258,6 +2398,9 @@ export async function onRequest(context) {
 
         const rawPhone = String(rec.phone || '').trim();
         const rawEmail = String(rec.email || '').trim();
+        const stdBirthDate = formatThaiDateISO(rec.birth_date || '');
+        const stdTransferDate = formatThaiDateISO(rec.transfer_date || '');
+        const stdFirstAppointDate = formatThaiDateISO(rec.first_appoint_date || '');
 
         await db.query(`
           INSERT INTO personnel_data70 (
@@ -2279,8 +2422,8 @@ export async function onRequest(context) {
             ${sqlEsc(cid)},
             ${sqlEsc(String(rec.bank_account || '').trim())},
             ${sqlEsc(normFullname)},
-            ${sqlEsc(String(rec.birth_date || '').trim())},
-            ${sqlEsc(String(rec.transfer_date || '').trim())},
+            ${sqlEsc(stdBirthDate)},
+            ${sqlEsc(stdTransferDate)},
             ${sqlEsc(String(rec.current_position || '').trim())},
             ${sqlEsc(String(rec.current_level || '').trim())},
             ${sqlEsc(String(rec.work_group || '').trim())},
@@ -2299,7 +2442,7 @@ export async function onRequest(context) {
             ${sqlNum(ch11Allowance)},
             ${sqlNum(totalIncome)},
             ${sqlEsc(String(rec.coop_member || 'ไม่ได้เป็นสมาชิกสหกรณ์').trim())},
-            ${sqlEsc(String(rec.first_appoint_date || '').trim())},
+            ${sqlEsc(stdFirstAppointDate)},
             ${sqlEsc(String(rec.first_position || '').trim())},
             ${sqlEsc(String(rec.first_level || '').trim())},
             ${changeVals.join(', ')},

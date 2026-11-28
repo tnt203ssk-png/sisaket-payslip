@@ -341,8 +341,8 @@ const DATA70_EXPORT_COLUMNS = [
   { key: "cid", header: "13หลัก", isText: true },
   { key: "bank_account", header: "เลขบัญชี", isText: true },
   { key: "fullname", header: "ชื่อ-สกุล" },
-  { key: "birth_date", header: "วันเดือนปีเกิด" },
-  { key: "transfer_date", header: "วันที่ย้ายมาสังกัดหรือบรรจุที่ อบจ.ศรีสะเกษ" },
+  { key: "birth_date", header: "วันเดือนปีเกิด", isDate: true },
+  { key: "transfer_date", header: "วันที่ย้ายมาสังกัดหรือบรรจุที่ อบจ.ศรีสะเกษ", isDate: true },
   { key: "current_position", header: "ตำแหน่งปัจจุบัน" },
   { key: "current_level", header: "ระดับปัจจุบัน" },
   { key: "work_group", header: "กลุ่มงาน" },
@@ -361,14 +361,14 @@ const DATA70_EXPORT_COLUMNS = [
   { key: "ch11_allowance", header: "ฉ.11", isNum: true },
   { key: "total_income", header: "รวมรายรับ", isNum: true },
   { key: "coop_member", header: "เป็นสมาชิกสหกรณ์ออมทรัพย์" },
-  { key: "first_appoint_date", header: "วันเดือนปีที่บรรจุรับราชการครั้งแรก" },
+  { key: "first_appoint_date", header: "วันเดือนปีที่บรรจุรับราชการครั้งแรก", isDate: true },
   { key: "first_position", header: "ตำแหน่งที่บรรจุรับราชการครั้งแรก" },
   { key: "first_level", header: "ระดับที่บรรจุรับราชการครั้งแรก" }
 ];
 
 for (let i = 1; i <= 14; i++) {
   DATA70_EXPORT_COLUMNS.push(
-    { key: `change_date_${i}`, header: `วันเดือนปีที่เปลี่ยนตำแหน่งและระดับครั้งที่${i} (หากยังไม่เคยปรับให้ว่างไว้)` },
+    { key: `change_date_${i}`, header: `วันเดือนปีที่เปลี่ยนตำแหน่งและระดับครั้งที่${i} (หากยังไม่เคยปรับให้ว่างไว้)`, isDate: true },
     { key: `change_pos_${i}`, header: `ตำแหน่งที่เปลี่ยนครั้งที่${i}` },
     { key: `change_level_${i}`, header: `ระดับที่เปลี่ยนครั้งที่${i}` }
   );
@@ -402,6 +402,296 @@ let d70CurrentDuplicateState = {
 
 function normalizeFullnameSpaces(str) {
   return String(str || '').trim().replace(/\s+/g, ' ');
+}
+
+// ============================================================================
+// ฟังก์ชันกลางแปลงและตรวจสอบรูปแบบวันที่ให้เป็นมาตรฐาน ปี พ.ศ. แบบ YYYY-MM-DD
+// รองรับ: 2565-10-02, 2022-10-02, 10/2/22 (M/D/YY ค.ศ.), 02/10/2565 (DD/MM/YYYY พ.ศ.),
+//        25651002 (8 หลัก), 2 ต.ค. 2565, Excel serial date
+// ============================================================================
+const DATA70_THAI_MONTH_MAP = {
+  'ม.ค.': 1, 'มกราคม': 1, 'มค': 1,
+  'ก.พ.': 2, 'กุมภาพันธ์': 2, 'กพ': 2,
+  'มี.ค.': 3, 'มีนาคม': 3, 'มีค': 3,
+  'เม.ย.': 4, 'เมษายน': 4, 'เมย': 4,
+  'พ.ค.': 5, 'พฤษภาคม': 5, 'พค': 5,
+  'มิ.ย.': 6, 'มิถุนายน': 6, 'มิย': 6,
+  'ก.ค.': 7, 'กรกฎาคม': 7, 'กค': 7,
+  'ส.ค.': 8, 'สิงหาคม': 8, 'สค': 8,
+  'ก.ย.': 9, 'กันยายน': 9, 'กย': 9,
+  'ต.ค.': 10, 'ตุลาคม': 10, 'ตค': 10,
+  'พ.ย.': 11, 'พฤศจิกายน': 11, 'พย': 11,
+  'ธ.ค.': 12, 'ธันวาคม': 12, 'ธค': 12
+};
+
+function isValidBeCalendarDate(beYear, month, day) {
+  if (!Number.isInteger(beYear) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (beYear < 2400 || beYear > 2700) return false;
+  if (month < 1 || month > 12) return false;
+  const ceYear = beYear - 543;
+  const maxDay = new Date(Date.UTC(ceYear, month, 0)).getUTCDate();
+  return day >= 1 && day <= maxDay;
+}
+
+function formatThaiDateISO(rawVal) {
+  const raw = String(rawVal ?? '').trim();
+  if (!raw || raw === '-' || raw === 'ไม่มี' || raw === '0000-00-00') return '';
+
+  // ตัดส่วนเวลาออกหากติดมา เช่น 2022-10-02T00:00:00Z หรือ 2022-10-02 00:00:00
+  const s = raw.replace(/[T\s]\d{1,2}:\d{2}(:\d{2})?(\.\d+)?Z?$/i, '').trim();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const toBeYear = (y) => {
+    if (y >= 2400 && y <= 2700) return y;
+    if (y >= 1900 && y <= 2150) return y + 543;
+    if (y >= 0 && y <= 99) return (y <= 39 ? 2000 + y : 1900 + y) + 543;
+    return y;
+  };
+
+  // 1. YYYY-MM-DD / YYYY/MM/DD / YYYY.MM.DD (ทั้ง พ.ศ. และ ค.ศ. 4 หลัก)
+  let m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) {
+    const y = toBeYear(parseInt(m[1], 10));
+    const mo = parseInt(m[2], 10);
+    const d = parseInt(m[3], 10);
+    if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return raw;
+  }
+
+  // 2. ตัวเลขติดกัน 8 หลัก เช่น 25651002 (YYYYMMDD พ.ศ./ค.ศ.) หรือ 02102565 (DDMMYYYY)
+  m = s.match(/^(\d{8})$/);
+  if (m) {
+    const digits = m[1];
+    const yHead = parseInt(digits.slice(0, 4), 10);
+    const mMid = parseInt(digits.slice(4, 6), 10);
+    const dTail = parseInt(digits.slice(6, 8), 10);
+    if ((yHead >= 2400 && yHead <= 2700) || (yHead >= 1900 && yHead <= 2150)) {
+      const yBe = toBeYear(yHead);
+      if (isValidBeCalendarDate(yBe, mMid, dTail)) return `${yBe}-${pad2(mMid)}-${pad2(dTail)}`;
+    }
+    const dHead = parseInt(digits.slice(0, 2), 10);
+    const mHead = parseInt(digits.slice(2, 4), 10);
+    const yTail = parseInt(digits.slice(4, 8), 10);
+    if ((yTail >= 2400 && yTail <= 2700) || (yTail >= 1900 && yTail <= 2150)) {
+      const yBe = toBeYear(yTail);
+      if (isValidBeCalendarDate(yBe, mHead, dHead)) return `${yBe}-${pad2(mHead)}-${pad2(dHead)}`;
+    }
+    return raw;
+  }
+
+  // 3. DD/MM/YYYY หรือ D/M/YYYY (ปี 4 หลักอยู่ท้าย เช่น 02/10/2565 หรือ 02/10/2022)
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})$/);
+  if (m) {
+    const p1 = parseInt(m[1], 10);
+    const p2 = parseInt(m[2], 10);
+    const y = toBeYear(parseInt(m[3], 10));
+    let d = p1;
+    let mo = p2;
+    if (p1 <= 12 && p2 > 12) {
+      mo = p1;
+      d = p2;
+    }
+    if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return raw;
+  }
+
+  // 4. M/D/YY ค.ศ. (รูปแบบ Excel เช่น 10/2/22 -> 2565-10-02) หรือ D/M/YY หากตัวแรก > 12
+  m = s.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if (m) {
+    const p1 = parseInt(m[1], 10);
+    const p2 = parseInt(m[2], 10);
+    const y = toBeYear(parseInt(m[3], 10));
+    let mo = p1;
+    let d = p2;
+    if (p1 > 12 && p2 <= 12) {
+      d = p1;
+      mo = p2;
+    }
+    if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    return raw;
+  }
+
+  // 5. วันที่ข้อความภาษาไทย เช่น 2 ต.ค. 2565 หรือ 11 มีนาคม 2518
+  m = s.match(/^(\d{1,2})\s+([^\d\s]+)\s+(\d{2,4})$/);
+  if (m) {
+    const d = parseInt(m[1], 10);
+    const mo = DATA70_THAI_MONTH_MAP[m[2].trim()];
+    const y = toBeYear(parseInt(m[3], 10));
+    if (mo && isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+  }
+
+  // 6. Excel Serial Date Number (เช่น 44836 -> 2022-10-02 -> 2565-10-02)
+  if (/^\d{5}$/.test(s)) {
+    const serial = parseInt(s, 10);
+    if (serial >= 18000 && serial <= 60000) {
+      const dt = new Date(Date.UTC(1899, 11, 30) + serial * 86400000);
+      const y = dt.getUTCFullYear() + 543;
+      const mo = dt.getUTCMonth() + 1;
+      const d = dt.getUTCDate();
+      if (isValidBeCalendarDate(y, mo, d)) return `${y}-${pad2(mo)}-${pad2(d)}`;
+    }
+  }
+
+  return raw;
+}
+
+function validateThaiDateISO(val, allowEmpty) {
+  const s = String(val ?? '').trim();
+  if (!s) {
+    if (allowEmpty) return { valid: true, message: '' };
+    return {
+      valid: false,
+      message: '⚠️ กรุณากรอกวันที่เป็นปี พ.ศ. รูปแบบ YYYY-MM-DD (เช่น 2565-10-02)'
+    };
+  }
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!m) {
+    return {
+      valid: false,
+      message: '⚠️ รูปแบบวันที่ไม่ถูกต้อง ต้องเป็นปี พ.ศ. 4 หลัก แบบ YYYY-MM-DD (เช่น 2565-10-02)'
+    };
+  }
+  const y = parseInt(m[1], 10);
+  const mo = parseInt(m[2], 10);
+  const d = parseInt(m[3], 10);
+  if (y < 2400 || y > 2700) {
+    return {
+      valid: false,
+      message: '⚠️ กรุณาระบุปี พ.ศ. 4 หลักให้ถูกต้อง (เช่น 2518–2599)'
+    };
+  }
+  if (mo < 1 || mo > 12) {
+    return {
+      valid: false,
+      message: '⚠️ เดือนไม่ถูกต้อง ต้องอยู่ระหว่าง 01–12 (รูปแบบ YYYY-MM-DD)'
+    };
+  }
+  if (!isValidBeCalendarDate(y, mo, d)) {
+    return {
+      valid: false,
+      message: '⚠️ วันที่ไม่ถูกต้องตามปฏิทิน (วันต้องอยู่ระหว่าง 01–31 ตามจำนวนวันในเดือนนั้น)'
+    };
+  }
+  return { valid: true, message: '' };
+}
+
+function setD70DateErrorUI(inputEl, errMsg) {
+  if (!inputEl) return;
+  const errEl = document.getElementById(`${inputEl.id}_err`);
+  if (errMsg) {
+    inputEl.style.borderColor = '#dc2626';
+    inputEl.style.background = '#fef2f2';
+    if (errEl) {
+      errEl.textContent = errMsg;
+      errEl.style.display = 'block';
+    }
+  } else {
+    inputEl.style.borderColor = '#94a3b8';
+    inputEl.style.background = '#ffffff';
+    if (errEl) {
+      errEl.textContent = '';
+      errEl.style.display = 'none';
+    }
+  }
+}
+
+function onD70DateInputBlur(inputEl, allowEmpty) {
+  if (!inputEl) return true;
+  const formatted = formatThaiDateISO(inputEl.value);
+  if (inputEl.value !== formatted) {
+    inputEl.value = formatted;
+  }
+  const check = validateThaiDateISO(inputEl.value, Boolean(allowEmpty));
+  setD70DateErrorUI(inputEl, check.valid ? '' : check.message);
+  return check.valid;
+}
+
+function onD70DateInputLive(inputEl, allowEmpty) {
+  if (!inputEl) return;
+  const raw = String(inputEl.value || '').trim();
+  // หากพิมพ์ครบ 8 หลักติดกัน เช่น 25651002 ให้จัดรูปแบบเป็น 2565-10-02 ทันที
+  if (/^\d{8}$/.test(raw)) {
+    const formatted = formatThaiDateISO(raw);
+    if (formatted !== raw) {
+      inputEl.value = formatted;
+    }
+  }
+  const check = validateThaiDateISO(inputEl.value, Boolean(allowEmpty));
+  if (check.valid || !raw) {
+    setD70DateErrorUI(inputEl, '');
+  }
+}
+
+function getAllD70DateFieldSpecs() {
+  const specs = [
+    { id: 'd70_transfer_date', label: 'วันที่ย้ายมาสังกัด/บรรจุที่ อบจ.ศรีสะเกษ', tab: 1, allowEmpty: false },
+    { id: 'd70_birth_date', label: 'วันเดือนปีเกิด', tab: 1, allowEmpty: false },
+    { id: 'd70_first_appoint_date', label: 'วันเดือนปีที่บรรจุรับราชการครั้งแรก', tab: 3, allowEmpty: false }
+  ];
+  for (let i = 1; i <= 14; i++) {
+    specs.push({
+      id: `d70_change_date_${i}`,
+      label: `วันเดือนปีที่เปลี่ยนตำแหน่งและระดับครั้งที่ ${i}`,
+      tab: 4,
+      stepIdx: i,
+      allowEmpty: true
+    });
+  }
+  return specs;
+}
+
+function clearAllD70DateErrors() {
+  for (const sp of getAllD70DateFieldSpecs()) {
+    const el = document.getElementById(sp.id);
+    if (el) setD70DateErrorUI(el, '');
+  }
+}
+
+function validateAllD70DatesBeforeSave() {
+  let firstInvalid = null;
+  for (const sp of getAllD70DateFieldSpecs()) {
+    const el = document.getElementById(sp.id);
+    if (!el) continue;
+    const formatted = formatThaiDateISO(el.value);
+    if (el.value !== formatted) el.value = formatted;
+    // สำหรับบันทึกจริง: ตรวจความถูกต้องทุกรายการที่ไม่ว่าง (ช่องประวัติที่ยังไม่ปรับเปลี่ยนเว้นว่างได้)
+    const val = el.value.trim();
+    if (!val && sp.allowEmpty) {
+      setD70DateErrorUI(el, '');
+      continue;
+    }
+    if (!val && !sp.allowEmpty) {
+      // แจ้งเตือนสีแดงใต้ช่องหากเว้นว่างไว้ในช่องวันที่หลัก แต่ไม่บล็อกกรณีข้อมูลเก่าที่ยังไม่มีวันเกิด/วันบรรจุ
+      setD70DateErrorUI(el, '');
+      continue;
+    }
+    const check = validateThaiDateISO(val, sp.allowEmpty);
+    setD70DateErrorUI(el, check.valid ? '' : check.message);
+    if (!check.valid && !firstInvalid) {
+      firstInvalid = { ...sp, el, message: check.message };
+    }
+  }
+  if (firstInvalid) {
+    switchData70Tab(firstInvalid.tab);
+    if (firstInvalid.stepIdx && firstInvalid.stepIdx > data70VisibleChangeSteps) {
+      updateD70VisibleSteps(firstInvalid.stepIdx);
+    }
+    try { firstInvalid.el.focus(); } catch (e) {}
+    return { ok: false, firstInvalid };
+  }
+  return { ok: true, firstInvalid: null };
+}
+
+function standardizeData70RowDates(row) {
+  if (!row || typeof row !== 'object') return row;
+  const out = { ...row };
+  if ('birth_date' in out) out.birth_date = formatThaiDateISO(out.birth_date);
+  if ('transfer_date' in out) out.transfer_date = formatThaiDateISO(out.transfer_date);
+  if ('first_appoint_date' in out) out.first_appoint_date = formatThaiDateISO(out.first_appoint_date);
+  for (let i = 1; i <= 14; i++) {
+    const k = `change_date_${i}`;
+    if (k in out) out[k] = formatThaiDateISO(out[k]);
+  }
+  return out;
 }
 
 // แยกตำแหน่งและระดับจากข้อความรวมใน tbmain.nposit เช่น "นักสาธารณสุขชำนาญการ" หรือ "พยาบาลวิชาชีพปฏิบัติการ" -> { pos: "พยาบาลวิชาชีพ", lvl: "ปฎิบัติการ" }
@@ -506,8 +796,9 @@ function initData70UI() {
           </div>
           <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(185px, 1fr)); gap:8px;">
             <div>
-              <label style="font-size:12px; font-weight:bold; color:#334155; display:block; margin-bottom:2px;">วันเดือนปีที่เปลี่ยนครั้งที่ ${i} (พ.ศ. YYYY-MM-DD):</label>
-              <input type="text" id="d70_change_date_${i}" placeholder="เช่น 2551-12-11 (เว้นว่างถ้ายังไม่ปรับ)" style="width:100%; padding:6px; font-size:13px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <label for="d70_change_date_${i}" style="font-size:12px; font-weight:bold; color:#334155; display:block; margin-bottom:2px;">วันเดือนปีที่เปลี่ยนตำแหน่งและระดับครั้งที่ ${i} (พ.ศ. YYYY-MM-DD):</label>
+              <input type="text" id="d70_change_date_${i}" maxlength="20" placeholder="เช่น 2568-01-02" onblur="onD70DateInputBlur(this, true)" oninput="onD70DateInputLive(this, true)" style="width:100%; padding:6px; font-size:13px; border:1px solid #94a3b8; border-radius:4px; box-sizing:border-box;">
+              <div id="d70_change_date_${i}_err" style="display:none; margin-top:3px; color:#dc2626; font-size:11.5px; font-weight:bold; line-height:1.35;"></div>
             </div>
             <div>
               <label style="font-size:12px; font-weight:bold; color:#334155; display:block; margin-bottom:2px;">ตำแหน่งที่เปลี่ยนครั้งที่ ${i}:</label>
@@ -618,7 +909,10 @@ function setD70StepUnchanged(stepIdx) {
   const dEl = document.getElementById(`d70_change_date_${stepIdx}`);
   const pEl = document.getElementById(`d70_change_pos_${stepIdx}`);
   const lEl = document.getElementById(`d70_change_level_${stepIdx}`);
-  if (dEl) dEl.value = '';
+  if (dEl) {
+    dEl.value = '';
+    setD70DateErrorUI(dEl, '');
+  }
   if (pEl) pEl.value = 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
   if (lEl) lEl.value = 'ยังไม่ได้ปรับระดับ';
 }
@@ -1124,14 +1418,25 @@ function resetData70FormFields(cid) {
 
 function populateData70Form(r) {
   renderD70DuplicateState(null, null);
+  clearAllD70DateErrors();
   document.getElementById('d70_seq_no').value = r.seq_no || 0;
   document.getElementById('d70_cid').value = r.cid || '';
   document.getElementById('d70_fullname').value = normalizeFullnameSpaces(r.fullname || '');
-  document.getElementById('d70_birth_date').value = r.birth_date || '';
+  const stdBirth = formatThaiDateISO(r.birth_date || '');
+  const stdTransfer = formatThaiDateISO(r.transfer_date || '');
+  document.getElementById('d70_birth_date').value = stdBirth;
   document.getElementById('d70_phone').value = r.phone || '';
   document.getElementById('d70_email').value = r.email || '';
-  document.getElementById('d70_transfer_date').value = r.transfer_date || '';
+  document.getElementById('d70_transfer_date').value = stdTransfer;
   document.getElementById('d70_position_no').value = r.position_no || '';
+  if (stdBirth) {
+    const chkB = validateThaiDateISO(stdBirth, true);
+    if (!chkB.valid) setD70DateErrorUI(document.getElementById('d70_birth_date'), chkB.message);
+  }
+  if (stdTransfer) {
+    const chkT = validateThaiDateISO(stdTransfer, true);
+    if (!chkT.valid) setD70DateErrorUI(document.getElementById('d70_transfer_date'), chkT.message);
+  }
 
   renderHospitalSelectOptions('', r.hname || '');
   setSelectOrAddOption('d70_hname', r.hname || '');
@@ -1180,18 +1485,29 @@ function populateData70Form(r) {
   setSelectOrAddOption('d70_coop_member', r.coop_member || 'ไม่ได้เป็นสมาชิกสหกรณ์');
   syncD70ChildTuitionTotal(false);
 
-  document.getElementById('d70_first_appoint_date').value = r.first_appoint_date || '';
+  const stdFirstAppoint = formatThaiDateISO(r.first_appoint_date || '');
+  document.getElementById('d70_first_appoint_date').value = stdFirstAppoint;
+  if (stdFirstAppoint) {
+    const chkF = validateThaiDateISO(stdFirstAppoint, true);
+    if (!chkF.valid) setD70DateErrorUI(document.getElementById('d70_first_appoint_date'), chkF.message);
+  }
   setSelectOrAddOption('d70_first_position', r.first_position || '');
   setSelectOrAddOption('d70_first_level', r.first_level || '');
 
   let highestActiveStep = 7;
   for (let i = 1; i <= 14; i++) {
-    const cDate = r[`change_date_${i}`] || '';
+    const cDate = formatThaiDateISO(r[`change_date_${i}`] || '');
     const cPos = r[`change_pos_${i}`] || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
     const cLvl = r[`change_level_${i}`] || 'ยังไม่ได้ปรับระดับ';
 
     const dEl = document.getElementById(`d70_change_date_${i}`);
-    if (dEl) dEl.value = cDate;
+    if (dEl) {
+      dEl.value = cDate;
+      if (cDate) {
+        const chkC = validateThaiDateISO(cDate, true);
+        if (!chkC.valid) setD70DateErrorUI(dEl, chkC.message);
+      }
+    }
     setSelectOrAddOption(`d70_change_pos_${i}`, cPos);
     setSelectOrAddOption(`d70_change_level_${i}`, cLvl);
 
@@ -1219,6 +1535,13 @@ function collectData70FormRecord() {
   const rawFormCid = document.getElementById('d70_cid').value.replace(/[^0-9]/g, '').trim();
   const safeCid = (!isAdminUser && loggedInCid.length === 13) ? loggedInCid : rawFormCid;
 
+  const stdBirthDate = formatThaiDateISO(document.getElementById('d70_birth_date').value);
+  const stdTransferDate = formatThaiDateISO(document.getElementById('d70_transfer_date').value);
+  const stdFirstAppointDate = formatThaiDateISO(document.getElementById('d70_first_appoint_date').value);
+  document.getElementById('d70_birth_date').value = stdBirthDate;
+  document.getElementById('d70_transfer_date').value = stdTransferDate;
+  document.getElementById('d70_first_appoint_date').value = stdFirstAppointDate;
+
   const rec = {
     seq_no: Number(document.getElementById('d70_seq_no').value || 0),
     sml_seq: Number(document.getElementById('d70_sml_seq').value || 0),
@@ -1227,8 +1550,8 @@ function collectData70FormRecord() {
     cid: safeCid,
     bank_account: document.getElementById('d70_bank_account').value.trim(),
     fullname: normName,
-    birth_date: document.getElementById('d70_birth_date').value.trim(),
-    transfer_date: document.getElementById('d70_transfer_date').value.trim(),
+    birth_date: stdBirthDate,
+    transfer_date: stdTransferDate,
     current_position: document.getElementById('d70_current_position').value.trim(),
     current_level: document.getElementById('d70_current_level').value.trim(),
     work_group: document.getElementById('d70_work_group') ? document.getElementById('d70_work_group').value.trim() : '',
@@ -1247,7 +1570,7 @@ function collectData70FormRecord() {
     ch11_allowance: Number(document.getElementById('d70_ch11_allowance').value || 0),
     total_income: Number(document.getElementById('d70_total_income').value || 0),
     coop_member: document.getElementById('d70_coop_member').value.trim(),
-    first_appoint_date: document.getElementById('d70_first_appoint_date').value.trim(),
+    first_appoint_date: stdFirstAppointDate,
     first_position: document.getElementById('d70_first_position').value.trim(),
     first_level: document.getElementById('d70_first_level').value.trim(),
     phone: document.getElementById('d70_phone').value.trim(),
@@ -1267,7 +1590,9 @@ function collectData70FormRecord() {
     const dEl = document.getElementById(`d70_change_date_${i}`);
     const pEl = document.getElementById(`d70_change_pos_${i}`);
     const lEl = document.getElementById(`d70_change_level_${i}`);
-    rec[`change_date_${i}`] = dEl ? dEl.value.trim() : '';
+    const stdChgDate = dEl ? formatThaiDateISO(dEl.value) : '';
+    if (dEl) dEl.value = stdChgDate;
+    rec[`change_date_${i}`] = stdChgDate;
     rec[`change_pos_${i}`] = (pEl && pEl.value.trim()) ? pEl.value.trim() : 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
     rec[`change_level_${i}`] = (lEl && lEl.value.trim()) ? lEl.value.trim() : 'ยังไม่ได้ปรับระดับ';
   }
@@ -1292,6 +1617,14 @@ async function saveData70Form(e) {
   if (!rec.fullname) {
     alert('กรุณากรอกชื่อ-สกุล');
     switchData70Tab(1);
+    return;
+  }
+
+  // ตรวจสอบความถูกต้องของช่องวันที่ทั้งหมด (รูปแบบ พ.ศ. YYYY-MM-DD)
+  const dateValidation = validateAllD70DatesBeforeSave();
+  if (!dateValidation.ok) {
+    const fi = dateValidation.firstInvalid;
+    alert(`ไม่สามารถบันทึกได้ เนื่องจากช่อง "${fi.label}" มีรูปแบบวันที่ไม่ถูกต้อง\n\n${fi.message}`);
     return;
   }
 
@@ -1451,7 +1784,7 @@ async function loadAdminData70List() {
       return;
     }
 
-    adminData70List = res.rows || [];
+    adminData70List = (res.rows || []).map(standardizeData70RowDates);
     if (sumEl) {
       sumEl.innerHTML = `📊 ข้อมูลในตาราง <code>personnel_data70</code> ทั้งหมด: <b style="color:#1e40af;">${res.total_data70 || 0}</b> คน (แสดงตามตัวกรอง <b style="color:#166534;">${adminData70List.length}</b> คน | สมาชิกใน <code>tbmain</code> ทั้งหมด ${res.total_tbmain || 751} คน)`;
     }
@@ -1576,6 +1909,9 @@ function exportData70Excel() {
     const rArr = DATA70_EXPORT_COLUMNS.map(col => {
       let val = row[col.key];
       if (col.key === 'seq_no' && (!val || Number(val) === 0)) val = idx + 1;
+      if (col.isDate) {
+        return formatThaiDateISO(val);
+      }
       if (col.isText) {
         return String(val ?? '').trim();
       }
@@ -1590,9 +1926,9 @@ function exportData70Excel() {
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
 
-  // บังคับคอลัมน์ที่เป็น isText (13หลัก, เลขบัญชี, หมายเลขโทรศัพท์) ให้เป็นชนิด String ('s') เพื่อป้องกัน E+12
+  // บังคับคอลัมน์ที่เป็น isText หรือ isDate ให้เป็นชนิด String ('s') เพื่อป้องกัน E+12 และไม่ให้ Excel แปลง พ.ศ. YYYY-MM-DD เพี้ยน
   const textColIndices = DATA70_EXPORT_COLUMNS
-    .map((col, idx) => (col.isText ? idx : -1))
+    .map((col, idx) => ((col.isText || col.isDate) ? idx : -1))
     .filter(idx => idx >= 0);
   for (let r = 1; r < aoa.length; r++) {
     for (const cIdx of textColIndices) {
@@ -1637,6 +1973,9 @@ function exportData70Csv() {
     const vals = DATA70_EXPORT_COLUMNS.map(col => {
       let val = row[col.key];
       if (col.key === 'seq_no' && (!val || Number(val) === 0)) val = idx + 1;
+      if (col.isDate) {
+        return escCsv(formatThaiDateISO(val), false);
+      }
       if (col.isNum) {
         const n = Number(String(val ?? 0).replace(/,/g, ''));
         return Number.isFinite(n) ? (Number.isInteger(n) ? String(n) : n.toFixed(2)) : '0';
@@ -1724,6 +2063,8 @@ function renderData70ImportPreviewTable(rows) {
         <td align="center">${i + 1}</td>
         <td align="center" style="font-family:Consolas, monospace;">${esc(r.cid)}</td>
         <td align="left"><b>${esc(r.fullname || '-')}</b></td>
+        <td align="center" style="font-family:Consolas, monospace; white-space:nowrap;">${esc(formatThaiDateISO(r.birth_date) || '-')}</td>
+        <td align="center" style="font-family:Consolas, monospace; white-space:nowrap;">${esc(formatThaiDateISO(r.transfer_date) || '-')}</td>
         <td>
           <select onchange="onImportData70FieldChange(${i}, 'current_position', this.value)" style="width:100%; min-width:155px; padding:3px 4px; font-size:11.5px; border:1px solid #94a3b8; border-radius:4px;">
             ${buildImportSelectOptionsHtml(DATA70_POSITIONS, r.current_position, '-- เลือกตำแหน่ง --')}
@@ -1745,7 +2086,7 @@ function renderData70ImportPreviewTable(rows) {
   return `
     <div style="margin-top:8px;">
       <div style="font-size:12px; font-weight:bold; color:#1e3a8a; margin-bottom:4px;">
-        📋 ตรวจสอบข้อมูลก่อนนำเข้า (สามารถปรับแก้ตำแหน่ง/ระดับได้ทันทีก่อนกดยืนยัน):
+        📋 ตรวจสอบข้อมูลก่อนนำเข้า (วันที่แปลงเป็น พ.ศ. YYYY-MM-DD อัตโนมัติ และปรับแก้ตำแหน่ง/ระดับได้ทันที):
       </div>
       <div style="max-height:220px; overflow:auto; border:1px solid #cbd5e1; border-radius:4px; background:#fff;">
         <table width="100%" border="1" cellpadding="4" cellspacing="0" style="border-collapse:collapse; font-size:12px;">
@@ -1754,6 +2095,8 @@ function renderData70ImportPreviewTable(rows) {
               <th width="36">#</th>
               <th width="105">เลข 13 หลัก</th>
               <th>ชื่อ-สกุล</th>
+              <th width="86">วันเกิด (พ.ศ.)</th>
+              <th width="90">วันย้าย/บรรจุ</th>
               <th>ตำแหน่งปัจจุบัน</th>
               <th>ระดับปัจจุบัน</th>
               <th width="85">ค่าเล่าเรียนรวม</th>
@@ -1944,8 +2287,8 @@ function handleData70FileSelect(e) {
           cid: cid,
           bank_account: cleanExcelTextValue(row[5]).replace(/[^0-9]/g, '') || cleanExcelTextValue(row[5]),
           fullname: normFullname,
-          birth_date: cleanExcelTextValue(row[7]),
-          transfer_date: cleanExcelTextValue(row[8]),
+          birth_date: formatThaiDateISO(cleanExcelTextValue(row[7])),
+          transfer_date: formatThaiDateISO(cleanExcelTextValue(row[8])),
           current_position: cleanExcelTextValue(row[9]),
           current_level: cleanExcelTextValue(row[10]),
           work_group: workGroupVal,
@@ -1964,7 +2307,7 @@ function handleData70FileSelect(e) {
           ch11_allowance: ch11Val,
           total_income: rawTotalIncome > 0 ? rawTotalIncome : calcIncome,
           coop_member: cleanExcelTextValue(row[25 + shift]) || 'ไม่ได้เป็นสมาชิกสหกรณ์',
-          first_appoint_date: cleanExcelTextValue(row[26 + shift]),
+          first_appoint_date: formatThaiDateISO(cleanExcelTextValue(row[26 + shift])),
           first_position: cleanExcelTextValue(row[27 + shift]),
           first_level: cleanExcelTextValue(row[28 + shift]),
           child1_school_type: c1.st,
@@ -1980,7 +2323,7 @@ function handleData70FileSelect(e) {
 
         for (let i = 1; i <= 14; i++) {
           const baseIdx = (29 + shift) + (i - 1) * 3;
-          rec[`change_date_${i}`] = cleanExcelTextValue(row[baseIdx]);
+          rec[`change_date_${i}`] = formatThaiDateISO(cleanExcelTextValue(row[baseIdx]));
           rec[`change_pos_${i}`] = cleanExcelTextValue(row[baseIdx + 1]) || 'ยังไม่ได้ปรับเปลี่ยนตำแหน่ง';
           rec[`change_level_${i}`] = cleanExcelTextValue(row[baseIdx + 2]) || 'ยังไม่ได้ปรับระดับ';
         }
